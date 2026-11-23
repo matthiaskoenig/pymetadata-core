@@ -103,8 +103,8 @@ pub(crate) fn response(kind: &'static str, message: String) -> Vec<u8> {
 /// The failure of a call which needs an archive before one was opened.
 pub(crate) fn no_archive() -> CallError {
     CallError::Internal(
-        "no archive is open: write the bytes of one into the allocation of omex_alloc and call \
-         omex_open before this"
+        "no archive is open: call omex_new for an empty one, or write the bytes of one into the \
+         allocation of omex_alloc and call omex_open, before this"
             .to_string(),
     )
 }

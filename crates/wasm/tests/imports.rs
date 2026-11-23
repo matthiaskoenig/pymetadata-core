@@ -41,19 +41,20 @@ const FUNCTION: u8 = 0;
 /// The kind byte of an exported memory.
 const MEMORY: u8 = 2;
 
-/// The exports a loader calls, with their kind: the ten functions of the ABI and the memory it
-/// reads their output in.
+/// The exports a loader calls, with their kind: the eleven functions of the ABI and the memory
+/// it reads their output in.
 ///
 /// A dropped `#[unsafe(no_mangle)]`, a renamed export or a linker flag which hides one would
 /// otherwise pass every gate of this workspace and fail in the loader of the npm package. The
 /// kind is asserted with the name, because a global or a table of the right name is no function
 /// a page can call and would satisfy a check which only reads names.
-const EXPORTS: [(&str, u8); 11] = [
+const EXPORTS: [(&str, u8); 12] = [
     ("memory", MEMORY),
     ("omex_about", FUNCTION),
     ("omex_alloc", FUNCTION),
     ("omex_entry", FUNCTION),
     ("omex_manifest", FUNCTION),
+    ("omex_new", FUNCTION),
     ("omex_open", FUNCTION),
     ("omex_output_len", FUNCTION),
     ("omex_output_ptr", FUNCTION),

@@ -16,9 +16,13 @@ const model = omex.entry("./model.xml"); // Uint8Array
 omex.setEntry("data.csv", null, false, new TextEncoder().encode("a,b\n1,2\n"));
 omex.removeEntry("./README.md");
 const bytes = omex.write(); // Uint8Array, members which did not change are copied as they are
+
+omex.create(); // an empty archive, with `.` and `./manifest.xml` and no member
+omex.setEntry("models/model.xml", null, true, new TextEncoder().encode("<sbml/>\n"));
+const made = omex.write(); // an archive built in the page, from nothing
 ```
 
-`createRuntime({ module })` takes a compiled `WebAssembly.Module` or the bytes of the file and is the only asynchronous call. A runtime holds one archive; make one per Web Worker to work on several at once, and never call it from inside one of its own calls. Every array it returns is a copy which the page owns.
+`createRuntime({ module })` takes a compiled `WebAssembly.Module` or the bytes of the file and is the only asynchronous call. A runtime holds one archive, which `open` reads from bytes and `create` makes empty, and either of them drops the archive before it; make one runtime per Web Worker to work on several at once, and never call it from inside one of its own calls. Every array it returns is a copy which the page owns.
 
 ## Errors
 

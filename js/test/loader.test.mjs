@@ -95,6 +95,29 @@ test("setEntry then write produces an archive the runtime reads back", async () 
   assert.equal(runtime.manifest().length, 6);
 });
 
+test("create builds an archive from scratch which the runtime reads back", async () => {
+  const runtime = await fresh();
+  runtime.create();
+  // the two entries a COMBINE archive must have, and no member
+  assert.deepEqual(
+    runtime.manifest().map((entry) => entry.location),
+    [".", "./manifest.xml"],
+  );
+  runtime.setEntry("models/model.xml", null, true, bytesOf("<sbml/>\n"));
+  const written = runtime.write();
+
+  const other = await fresh();
+  other.open(written);
+  const added = other.manifest().find((entry) => entry.location === "./models/model.xml");
+  assert.equal(added.master, true);
+  assert.equal(text(other.entry("./models/model.xml")), "<sbml/>\n");
+  // and it drops the archive which was open, as open does
+  runtime.open(fixture);
+  assert.equal(runtime.manifest().length, 6);
+  runtime.create();
+  assert.equal(runtime.manifest().length, 2);
+});
+
 test("write defaults to copying the entries it did not change", async () => {
   const runtime = await fresh();
   runtime.open(fixture);
@@ -286,7 +309,7 @@ test("a panic of the module surfaces its message and spends the instance", async
 
 test("the release module carries no probe and no import", () => {
   const exported = WebAssembly.Module.exports(module).map((entry) => entry.name);
-  assert.equal(exported.length, 11, exported.join(","));
+  assert.equal(exported.length, 12, exported.join(","));
   assert.ok(!exported.includes("omex_panic_probe"));
   assert.deepEqual(WebAssembly.Module.imports(module), []);
 });

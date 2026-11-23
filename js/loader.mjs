@@ -36,6 +36,7 @@ const FUNCTIONS = [
   "omex_alloc",
   "omex_output_ptr",
   "omex_output_len",
+  "omex_new",
   "omex_open",
   "omex_manifest",
   "omex_entry",
@@ -140,6 +141,20 @@ export class Runtime {
    */
   get spent() {
     return this.#spent;
+  }
+
+  /**
+   * Create an empty archive, dropping the one open before.
+   *
+   * The archive holds the two entries a COMBINE archive must have, `.` and `./manifest.xml`,
+   * and no member: `setEntry` adds the members and `write` gives the bytes of the `.omex` file.
+   * This is how a page builds an archive without opening one first, and it is `Archive()` of the
+   * python package.
+   */
+  create() {
+    this.#call(() => {
+      this.#finish(this.#exports.omex_new());
+    });
   }
 
   /**

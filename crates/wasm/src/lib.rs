@@ -32,6 +32,7 @@
 //! | `omex_alloc(len) -> *mut u8` | reserve `len` bytes of input, 0 when it cannot be had | - |
 //! | `omex_output_ptr() -> *const u8` | where the output of the last call is | - |
 //! | `omex_output_len() -> usize` | how long it is | - |
+//! | `omex_new() -> i32` | open an empty archive, to build one from scratch | nothing |
 //! | `omex_open() -> i32` | open the archive in the input buffer | nothing |
 //! | `omex_manifest() -> i32` | the entries of the archive | JSON |
 //! | `omex_entry(ptr, len) -> i32` | the bytes of the entry at that location | the bytes |
@@ -88,6 +89,24 @@ pub extern "C" fn omex_output_ptr() -> *const u8 {
 #[unsafe(no_mangle)]
 pub extern "C" fn omex_output_len() -> usize {
     buffers::output_len()
+}
+
+/// Open an empty archive, which a page then builds with `omex_set_entry` and `omex_write`.
+///
+/// This is `Archive()` of the python host: the archive holds the two entries the specification
+/// requires, `.` and `./manifest.xml`, and no member at all. Without it a page could only change
+/// an archive it already had, and would have to hand-write a seed zip in JavaScript to make one,
+/// which is the work this module exists to remove.
+///
+/// The archive which was open before is dropped, as `omex_open` drops it. The input buffer is
+/// left as it is, since this call reads no request, and nothing here can fail: the answer is
+/// always 0 and the output is empty, as it is after an open which succeeded.
+#[unsafe(no_mangle)]
+pub extern "C" fn omex_new() -> i32 {
+    panic::install();
+    buffers::set_archive(Some(Archive::new()));
+    buffers::publish(Vec::new());
+    OK
 }
 
 /// Open the archive whose bytes are in the input buffer.
@@ -371,6 +390,43 @@ mod tests {
         assert_eq!(omex_about(), OK);
         assert_eq!(answer()["backend"], json!("zlib-rs"));
         assert_eq!(answer()["version"], json!(env!("CARGO_PKG_VERSION")));
+    }
+
+    /// An archive built from scratch, which is the one thing `omex_open` cannot give a page.
+    #[test]
+    fn a_new_archive_is_set_written_and_read_back() {
+        let _gate = gate();
+        assert_eq!(omex_new(), OK);
+        assert!(output().is_empty(), "a new archive publishes no output");
+        assert_eq!(omex_manifest(), OK);
+        let entries = answer()["entries"].as_array().expect("the entries").len();
+        assert_eq!(entries, 2, "'.' and './manifest.xml' and nothing else");
+
+        let mut request = br#"{"location":"model.xml","master":true,"len":8}"#.to_vec();
+        request.extend_from_slice(b"<sbml/>\n");
+        let ptr = put(&request);
+        assert_eq!(omex_set_entry(ptr, request.len()), OK);
+
+        assert_eq!(omex_write(0), OK);
+        let mut written = Archive::from_bytes(&output()).expect("a readable archive");
+        assert_eq!(
+            written.locations().collect::<Vec<&str>>(),
+            [".", "./manifest.xml", "./model.xml"]
+        );
+        assert_eq!(
+            written.entry_bytes("./model.xml").expect("the entry"),
+            b"<sbml/>\n"
+        );
+
+        // and it drops the archive which was open, as an open does
+        put(COMP_MODELS);
+        assert_eq!(omex_open(), OK);
+        assert_eq!(omex_new(), OK);
+        assert_eq!(omex_manifest(), OK);
+        assert_eq!(
+            answer()["entries"].as_array().expect("the entries").len(),
+            2
+        );
     }
 
     /// A call which needs an archive before one was opened is `internal`, not a trap.

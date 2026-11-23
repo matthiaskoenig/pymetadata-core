@@ -259,6 +259,7 @@ the payload in the output buffer:
 omex_alloc(len) -> *mut u8
 omex_output_ptr() -> *const u8
 omex_output_len() -> usize
+omex_new() -> i32               // an empty archive, as `Archive()` in python
 omex_open() -> i32              // parse the input buffer as an archive
 omex_manifest() -> i32          // JSON: the entries
 omex_entry(ptr, len) -> i32     // the inflated bytes of one location
@@ -272,10 +273,10 @@ Error codes mirror the sibling. The core produces four, the kind strings of
 `wire::kind`: `malformed`, `refused`, `unsupported` and `not_found`, one per
 variant of `OmexError`. Two more are host-level and the core never returns
 them: `internal`, which the wasm host raises for a failure outside of the core
-(a request before `omex_open`, or a pointer and a length which are not a range
-of the input buffer, which is where `omex_alloc` is and the only place a
-request is read from), and `panic`, which its panic hook raises, writing the
-message into the output buffer before the trap.
+(a request before `omex_new` or `omex_open`, or a pointer and a length which
+are not a range of the input buffer, which is where `omex_alloc` is and the
+only place a request is read from), and `panic`, which its panic hook raises,
+writing the message into the output buffer before the trap.
 
 Two limitations of 0.1.0, both of them of the export list above and not of the
 core. `omex_open` takes no password, so a ZipCrypto protected archive cannot be
@@ -293,10 +294,11 @@ The cargo feature `panic-probe`, off by default, adds an export which panics
 on purpose. `js/test/loader.test.mjs` builds the module with it into its own
 target directory to prove, in a real engine, that the hook's sentence is what
 the loader reads after the trap; the default module exports exactly the eleven
-names above, which `crates/wasm/tests/imports.rs` and the same test assert. The
-loader reports a trap which left no message as the kind `trap` and every call
-after a trap as `spent`; those two kinds are the loader's own, the core and the
-wasm host never produce them.
+names above and the memory their output is read in, twelve in all, which
+`crates/wasm/tests/imports.rs` and the same test assert. The loader reports a
+trap which left no message as the kind `trap` and every call after a trap as
+`spent`; those two kinds are the loader's own, the core and the wasm host never
+produce them.
 
 `js/` ships `loader.mjs` with no dependency and no Node API, so it runs in a
 browser, a Web Worker and Node. `js/build.mjs` builds the module, copies it
