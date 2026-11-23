@@ -1,11 +1,11 @@
-# @matthiaskoenig/pymetadata-core
+# pymetadata-core
 
 Read and write COMBINE archives (OMEX) in the browser, with a WebAssembly module and no server. No dependency, and the module imports nothing, so there is no shim to set up. The archive is read lazily: opening one parses its directory, and a member is inflated when it is asked for.
 
 ```javascript
-import { createRuntime } from "@matthiaskoenig/pymetadata-core";
+import { createRuntime } from "pymetadata-core";
 
-// serve node_modules/@matthiaskoenig/pymetadata-core/runtime/pymetadata-core.wasm, the file the
+// serve node_modules/pymetadata-core/runtime/pymetadata-core.wasm, the file the
 // package exports as "./pymetadata-core.wasm", with the type application/wasm
 const module = await WebAssembly.compileStreaming(fetch("/pymetadata-core.wasm"));
 const omex = await createRuntime({ module });

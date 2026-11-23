@@ -264,8 +264,8 @@ jobs:
           node prepack.mjs
           version="$(node -p "require('./package.json').version")"
           test "${GITHUB_REF_NAME}" = "v${version}"
-          if npm view "@matthiaskoenig/pymetadata-core@${version}" version >/dev/null 2>&1; then
-            echo "::notice::@matthiaskoenig/pymetadata-core ${version} is on npm already, nothing is published"
+          if npm view "pymetadata-core@${version}" version >/dev/null 2>&1; then
+            echo "::notice::pymetadata-core ${version} is on npm already, nothing is published"
             exit 0
           fi
           npm publish --provenance --access public

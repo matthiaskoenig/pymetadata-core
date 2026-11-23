@@ -1,5 +1,5 @@
 {
-  "name": "@matthiaskoenig/pymetadata-core",
+  "name": "pymetadata-core",
   "version": "0.1.0",
   "description": "Read and write COMBINE archives (OMEX) in the browser with a WebAssembly module, no server and no dependency",
   "license": "MIT",

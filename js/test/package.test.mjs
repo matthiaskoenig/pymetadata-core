@@ -13,7 +13,7 @@ const read = (path) => readFileSync(join(here, "..", path), "utf8");
 test("package.json version equals the crate version", () => {
   const pkg = JSON.parse(read("package.json"));
   assert.equal(pkg.version, crateVersion());
-  assert.equal(pkg.name, "@matthiaskoenig/pymetadata-core");
+  assert.equal(pkg.name, "pymetadata-core");
   assert.equal(pkg.dependencies, undefined);
 });
 
