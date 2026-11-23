@@ -27,6 +27,14 @@ categories = ["science", "wasm"]
 [workspace.lints.rust]
 missing_docs = "warn"
 
+# Size of the wasm module, which a browser downloads: link time optimization across the crates
+# and no symbols. `panic = "abort"` is deliberately not set: pyo3 turns a Rust panic into a
+# python exception, and aborting would kill the interpreter instead.
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true
+
 [workspace.dependencies]
 thiserror = "2"
 serde_json = "1"

@@ -25,14 +25,26 @@ cargo check --locked --workspace --exclude pymetadata-python --target wasm32-unk
 cargo check --locked --workspace --exclude pymetadata-python --target wasm32-wasip1
 ```
 
-The python binding is not a default member of the workspace, so it has gates of its own. The wheel is built with maturin, installed into a uv environment next to `pytest` and `pymetadata` (the tests cross-check against it), and tested from there; `--no-sync` keeps `uv run` from rebuilding the package into the environment:
+The JavaScript package under `js/` has its own gates. `node js/build.mjs` comes before the tests, because the module and the fixture archive are built, not committed, and a fresh checkout fails the tests without them. One test builds a second module with the `panic-probe` feature, so it needs `cargo` and the `wasm32-unknown-unknown` target:
+
+```bash
+node js/build.mjs
+(cd js && npm test && npm pack --dry-run)
+```
+
+The python binding is not a default member of the workspace, so it has gates of its own. `uv.lock` pins the development environment, as it does in `pymetadata`: `uv sync --locked` creates it from the lock (and fails instead of re-resolving when the lock no longer matches `pyproject.toml`), builds the extension into it and installs `pytest`, `pymetadata` (the tests cross-check against it) and `ruff`. `uv lock --check` verifies the lock alone. The compiled extension lands in `python/pymetadata_core/` and is gitignored.
 
 ```bash
 cargo clippy -p pymetadata-python --locked --all-targets -- -D warnings
-uvx ruff@0.17.5 check
-uvx ruff@0.17.5 format --check
-uv venv
-uv pip install pytest pymetadata
+uv sync --locked
+uv run --no-sync ruff check
+uv run --no-sync ruff format --check
+uv run --no-sync pytest python/tests -q
+```
+
+The wheel which ships is a different job: it is built with maturin from the locked sources, installed over the development build and tested as installed; `--no-sync` keeps `uv run` from rebuilding the package into the environment:
+
+```bash
 uv run --with 'maturin>=1.16,<2' maturin build --release --locked -o dist
 uv pip install --force-reinstall dist/*.whl
 uv run --no-sync pytest python/tests -q

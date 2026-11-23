@@ -295,4 +295,17 @@ fn the_module_exports_the_abi_and_its_memory() {
             path.display()
         );
     }
+    // and nothing else: the `panic-probe` export panics on demand and ships in no module of a
+    // release, so a default build which carries it has enabled the feature by accident
+    assert_eq!(
+        found.len(),
+        EXPORTS.len(),
+        "{} exports more than the ABI: {found:?}",
+        path.display()
+    );
+    assert!(
+        !found.iter().any(|(name, _)| name == "omex_panic_probe"),
+        "{} carries the panic probe",
+        path.display()
+    );
 }

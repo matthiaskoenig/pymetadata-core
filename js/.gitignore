@@ -1,0 +1,6 @@
+# built by `node build.mjs`, not committed
+runtime/
+test/fixtures/
+# copied from the repository root by prepack.mjs
+LICENSE
+node_modules/

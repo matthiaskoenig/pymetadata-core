@@ -284,6 +284,15 @@ message of its own, the output buffer still holds whatever the call before it
 wrote, and the instance is spent: the loader instantiates a new one rather than
 calling into it again.
 
+The cargo feature `panic-probe`, off by default, adds an export which panics
+on purpose. `js/test/loader.test.mjs` builds the module with it into its own
+target directory to prove, in a real engine, that the hook's sentence is what
+the loader reads after the trap; the default module exports exactly the eleven
+names above, which `crates/wasm/tests/imports.rs` and the same test assert. The
+loader reports a trap which left no message as the kind `trap` and every call
+after a trap as `spent`; those two kinds are the loader's own, the core and the
+wasm host never produce them.
+
 `js/` ships `loader.mjs` with no dependency and no Node API, so it runs in a
 browser, a Web Worker and Node. `js/build.mjs` builds the module, copies it
 to `js/runtime/pymetadata-core.wasm` and prints the byte and gzipped sizes,

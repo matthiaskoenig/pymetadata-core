@@ -24,5 +24,12 @@ crate-type = ["cdylib", "rlib"]
 pymetadata-core = { path = "../core", version = "0.1.0" }
 serde_json.workspace = true
 
+# `panic-probe` adds one export which panics on purpose, for the test of the JavaScript package
+# which proves in a real engine that the panic hook leaves its sentence behind the trap. It is
+# not a default feature and the module of the npm package is built without it, which
+# `crates/wasm/tests/imports.rs` and `js/test/loader.test.mjs` both assert.
+[features]
+panic-probe = []
+
 [lints]
 workspace = true

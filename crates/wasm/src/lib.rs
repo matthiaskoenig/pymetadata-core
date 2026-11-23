@@ -186,6 +186,19 @@ pub extern "C" fn omex_about() -> i32 {
     OK
 }
 
+/// Panic on purpose, so that a test can watch the panic hook work in a real engine.
+///
+/// Only built with the `panic-probe` feature, which no default build and no release of the npm
+/// package enables. The panic runs the hook of `panic.rs`, which publishes its sentence, and
+/// then traps, which is the one path no native test can take: `catch_unwind` unwinds where
+/// `wasm32-unknown-unknown` traps.
+#[cfg(feature = "panic-probe")]
+#[unsafe(no_mangle)]
+pub extern "C" fn omex_panic_probe() -> i32 {
+    panic::install();
+    panic!("panic probe: a panic on purpose")
+}
+
 /// Run `f` on the open archive and publish what it answers.
 ///
 /// The one place every export which needs an archive goes through, so there is one answer for a
