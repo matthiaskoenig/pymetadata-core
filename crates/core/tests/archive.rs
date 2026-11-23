@@ -309,8 +309,10 @@ fn from_bytes_with_password_opens_an_archive() {
     assert_eq!(archive.entry_bytes("./extra.txt").unwrap(), b"extra");
 }
 
-/// An encrypted archive (built by `scripts/zip_edge_fixtures.py`, manifest included, password `test1234`) opens with its password and is
-/// refused without one.
+/// An encrypted archive opens with its password and is refused without one.
+///
+/// `scripts/zip_edge_fixtures.py` builds the fixture, its manifest included, under the
+/// password `test1234`.
 #[test]
 fn an_encrypted_archive_needs_its_password() {
     let path = format!(

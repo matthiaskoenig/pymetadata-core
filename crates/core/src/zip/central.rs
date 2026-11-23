@@ -4,6 +4,7 @@
 //! a member: the local file header in front of the data repeats its fields and is allowed to
 //! leave them zero when the member was written through a stream.
 
+use super::crypto::{ENCRYPTED, STRONG_ENCRYPTION};
 use super::eocd::Eocd;
 use super::{OmexError, as_usize, end_of, has_signature, slice_at, u16_at, u32_at, u64_at};
 
@@ -61,6 +62,24 @@ pub struct Member {
     /// The modification time in MS-DOS format, whose high byte checks the password of an
     /// encrypted member written through a stream.
     pub dos_time: u16,
+    /// The modification date in MS-DOS format, which a raw copy of the member carries over.
+    pub dos_date: u16,
+    /// The external file attributes: the unix mode of the member in the high 16 bits and the
+    /// MS-DOS attribute byte in the lowest. A raw copy carries them over, so that an executable
+    /// member stays executable.
+    pub external_attributes: u32,
+}
+
+impl Member {
+    /// Does the member hold encrypted bytes?
+    ///
+    /// Bit 0 of the flags is traditional PKWARE encryption, which the reader decrypts with a
+    /// password, and bit 6 is strong encryption, which it refuses. A member with either is not
+    /// copied into another archive as the bytes it holds: the copy drops the flags, and the
+    /// ciphertext behind them would be read as content.
+    pub fn is_encrypted(&self) -> bool {
+        self.flags & (ENCRYPTED | STRONG_ENCRYPTION) != 0
+    }
 }
 
 /// Read every member the central directory of `bytes` lists.
@@ -112,12 +131,14 @@ fn read(bytes: &[u8], offset: usize) -> Result<(Member, usize), OmexError> {
     let flags = u16_at(bytes, end_of(offset, 8)?)?;
     let method = u16_at(bytes, end_of(offset, 10)?)?;
     let dos_time = u16_at(bytes, end_of(offset, 12)?)?;
+    let dos_date = u16_at(bytes, end_of(offset, 14)?)?;
     let crc32 = u32_at(bytes, end_of(offset, 16)?)?;
     let compressed_size = u32_at(bytes, end_of(offset, 20)?)?;
     let uncompressed_size = u32_at(bytes, end_of(offset, 24)?)?;
     let name_len = usize::from(u16_at(bytes, end_of(offset, 28)?)?);
     let extra_len = usize::from(u16_at(bytes, end_of(offset, 30)?)?);
     let comment_len = usize::from(u16_at(bytes, end_of(offset, 32)?)?);
+    let external_attributes = u32_at(bytes, end_of(offset, 38)?)?;
     let header_offset = u32_at(bytes, end_of(offset, 42)?)?;
     let name_at = end_of(offset, FIXED_SIZE)?;
     let extra_at = end_of(name_at, name_len)?;
@@ -131,6 +152,8 @@ fn read(bytes: &[u8], offset: usize) -> Result<(Member, usize), OmexError> {
         header_offset: header_offset.into(),
         flags,
         dos_time,
+        dos_date,
+        external_attributes,
     };
     let sentinel = [compressed_size, uncompressed_size, header_offset].contains(&SENTINEL32);
     let extra = slice_at(bytes, extra_at, extra_len)?;

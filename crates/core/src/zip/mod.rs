@@ -15,9 +15,11 @@ mod crypto;
 mod eocd;
 mod local;
 mod reader;
+mod writer;
 
 pub use central::Member;
 pub use reader::{MAX_INFLATED_SIZE, Reader};
+pub use writer::Writer;
 
 use crate::OmexError;
 

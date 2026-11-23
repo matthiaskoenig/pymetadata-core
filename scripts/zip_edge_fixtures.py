@@ -8,7 +8,10 @@ Rust: what the reference implementation writes is better evidence than bytes we 
     stored.zip       one stored member
     zip64.zip        the zip64 end-of-central-directory record, locator and extra field
     descriptors.zip  members written through an unseekable stream, so they carry a data
-                     descriptor and a local header with zeroed sizes and bit 3 set
+                     descriptor and a local header with zeroed sizes and bit 3 set. They
+                     are executable, which is a mode no writer gives a member of its
+                     own, so that a writer which copies a member can be seen to carry
+                     the external attributes of the member over
     bzip2.zip        a member compressed with bzip2 (method 12), which is unsupported
     bad_crc.zip      `stored.zip` with one byte of the member data flipped
     truncated.zip    `stored.zip` without its end-of-central-directory record
@@ -65,6 +68,10 @@ from typing import BinaryIO
 ROOT = Path(__file__).resolve().parent.parent
 DATA = ROOT / "crates" / "core" / "tests" / "data" / "zip"
 OMEX = ROOT / "crates" / "core" / "tests" / "data" / "omex"
+
+#: the external attributes of an executable file, which is a unix mode no writer gives
+#: a member it writes itself
+EXECUTABLE = 0o100_755 << 16
 
 #: the stub `prepended.zip` carries in front of the archive, which holds no zip
 #: signature
@@ -136,12 +143,16 @@ class WriteOnly:
         self._handle.close()
 
 
-def info(name: str, method: int = zipfile.ZIP_STORED) -> zipfile.ZipInfo:
+def info(
+    name: str, method: int = zipfile.ZIP_STORED, attributes: int | None = None
+) -> zipfile.ZipInfo:
     """Describe one member with a fixed modification time.
 
     Args:
         name: The member name.
         method: The compression method.
+        attributes: The external file attributes, which hold the unix mode of the member
+            in their high 16 bits. The default of `zipfile` is used where none is given.
 
     Returns:
         The member description.
@@ -149,6 +160,8 @@ def info(name: str, method: int = zipfile.ZIP_STORED) -> zipfile.ZipInfo:
     entry = zipfile.ZipInfo(name, date_time=DATE_TIME)
     entry.compress_type = method
     entry.create_system = 3
+    if attributes is not None:
+        entry.external_attr = attributes
     return entry
 
 
@@ -341,7 +354,19 @@ def build_encrypted_omex() -> bytes:
     for name, content in OMEX_MEMBERS.items():
         data = encrypt_member(content, False, False)
         crc = zlib.crc32(content)
-        fields = (0x01, 0, DOS_TIME, DOS_DATE, crc, len(data), len(content), len(name), 0)
+        # the flags, the method, the time, the date, the CRC, the two sizes and the two
+        # lengths, which both headers carry
+        fields = (
+            0x01,
+            0,
+            DOS_TIME,
+            DOS_DATE,
+            crc,
+            len(data),
+            len(content),
+            len(name),
+            0,
+        )
         central += (
             struct.pack(
                 "<4sHHHHHHIIIHHHHHII",
@@ -358,11 +383,7 @@ def build_encrypted_omex() -> bytes:
             )
             + name
         )
-        body += (
-            struct.pack("<4sHHHHHIIIHH", b"PK\x03\x04", 20, *fields)
-            + name
-            + data
-        )
+        body += struct.pack("<4sHHHHHIIIHH", b"PK\x03\x04", 20, *fields) + name + data
     end = struct.pack(
         "<4sHHHHIIH", EOCD_SIGNATURE, 0, 0, 2, 2, len(central), len(body), 0
     )
@@ -493,18 +514,21 @@ def to_zip64(raw: bytes) -> bytes:
     return raw[:offset] + bytes(central) + record + locator + end
 
 
-def write_descriptors(path: Path, members: dict[str, bytes]) -> None:
+def write_descriptors(
+    path: Path, members: dict[str, bytes], attributes: int | None = None
+) -> None:
     """Write an archive through an unseekable stream, so members carry descriptors.
 
     Args:
         path: The archive to write.
         members: The member names and their content.
+        attributes: The external file attributes of every member.
     """
     stream = WriteOnly(path)
     try:
         with zipfile.ZipFile(stream, "w") as archive:
             for name, content in members.items():
-                archive.writestr(info(name), content)
+                archive.writestr(info(name, attributes=attributes), content)
     finally:
         stream.close()
     with open(path, "rb") as handle:
@@ -624,9 +648,12 @@ def main() -> None:
         {"first.bin": pattern(10_000), "second.bin": pattern(20_000)},
     )
 
+    # the members are executable, so that a writer which copies one can be seen to carry
+    # the attributes of the member over and not to stamp a mode of its own on it
     write_descriptors(
         DATA / "descriptors.zip",
         {"streamed.txt": b"written through a pipe\n", "second.bin": pattern(5_000)},
+        attributes=EXECUTABLE,
     )
 
     write_archive(DATA / "bzip2.zip", {"bzip2.txt": pattern(4_000)}, zipfile.ZIP_BZIP2)
@@ -745,7 +772,7 @@ def verify_prepended(fixture: Path, source: Path) -> None:
 
 
 def verify_encrypted() -> None:
-    """Check the four hand built fixtures against `zipfile`.
+    """Check the hand built fixtures against `zipfile`.
 
     Raises:
         ValueError: If `zipfile` reads one of them other than the way it is meant to be
@@ -767,6 +794,15 @@ def verify_encrypted() -> None:
             content = OMEX_MEMBERS[entry.filename.encode()]
             if archive.read(entry, pwd=PASSWORD) != content:
                 raise ValueError(f"encrypted_omex.zip: {entry.filename} is not read")
+            try:
+                archive.read(entry, pwd=b"wrong")
+            except RuntimeError:
+                pass
+            else:
+                raise ValueError(
+                    f"encrypted_omex.zip: zipfile accepts a wrong password for "
+                    f"{entry.filename}"
+                )
     with zipfile.ZipFile(DATA / "encrypted_descriptor.zip") as archive:
         if not archive.infolist()[0].flag_bits & 0x08:
             raise ValueError("encrypted_descriptor.zip: bit 3 is not set")
@@ -812,6 +848,10 @@ def verify(prepended_source: Path) -> None:
         sizes = [(entry.compress_size, entry.file_size) for entry in archive.infolist()]
     if sizes != [(10_000, 10_000), (20_000, 20_000)]:
         raise ValueError(f"zip64.zip: zipfile reads the sizes as {sizes}")
+    with zipfile.ZipFile(DATA / "descriptors.zip") as archive:
+        modes = {entry.external_attr for entry in archive.infolist()}
+    if modes != {EXECUTABLE}:
+        raise ValueError(f"descriptors.zip: the members carry the attributes {modes}")
     verify_encrypted()
     verify_prepended(DATA / "prepended.zip", prepended_source)
     verify_prepended(DATA / "prepended_zip64.zip", DATA / "zip64.zip")

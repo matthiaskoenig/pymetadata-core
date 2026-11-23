@@ -6,12 +6,18 @@ use crate::error::OmexError;
 use crate::formats::guess_format;
 use crate::location::normalize_location;
 use crate::manifest::{Entry, Manifest};
-use crate::zip::Reader;
+use crate::zip::{Member, Reader, Writer};
 
 /// The location of the archive itself.
 const ARCHIVE_LOCATION: &str = ".";
 /// The location of the manifest, which the core writes and the caller does not set.
 const MANIFEST_LOCATION: &str = "./manifest.xml";
+/// The compression level the manifest and an entry the caller handed over are deflated at.
+///
+/// 6 is the default of zlib and of python's `zipfile`, so it is the level the entries of a
+/// COMBINE archive carry today. A caller who wants another one writes the whole archive with
+/// [`Archive::to_bytes_recompressed`].
+const DEFLATE_LEVEL: u32 = 6;
 
 /// Where the bytes of an entry are.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -19,7 +25,16 @@ enum Content {
     /// Still in the input, as the member with this index of the reader.
     Member(usize),
     /// Inflated from a member of the input, once, by a caller who asked for it.
-    Inflated(Vec<u8>),
+    ///
+    /// The member it came from is still the one the input holds, so the index stays: an entry
+    /// a caller read and did not replace is written as the compressed blob it is, like one
+    /// nobody ever asked for.
+    Inflated {
+        /// The index of the member of the reader the bytes came from.
+        index: usize,
+        /// The inflated bytes.
+        data: Vec<u8>,
+    },
     /// Handed over by the caller, replacing what the input holds.
     Replaced(Vec<u8>),
 }
@@ -198,11 +213,13 @@ impl Archive {
             )));
         }
         if let Some(Content::Member(index)) = self.content.get(&key) {
-            let data = self.inflate_member(*index)?;
-            self.content.insert(key.clone(), Content::Inflated(data));
+            let index = *index;
+            let data = self.inflate_member(index)?;
+            self.content
+                .insert(key.clone(), Content::Inflated { index, data });
         }
         match self.content.get(&key) {
-            Some(Content::Inflated(data) | Content::Replaced(data)) => Ok(data),
+            Some(Content::Inflated { data, .. } | Content::Replaced(data)) => Ok(data),
             _ => Err(OmexError::NotFound(format!(
                 "no entry with bytes at '{key}'"
             ))),
@@ -239,14 +256,145 @@ impl Archive {
         Some(entry)
     }
 
-    /// Inflate the member with this index of the input.
+    /// Write the archive, copying every entry which did not change as the blob it is.
     ///
-    /// The one place where a member is inflated.
+    /// An entry whose bytes the caller never replaced is written as the compressed member it
+    /// was read as, with its CRC32, its sizes and its compression method, so that "open an
+    /// archive, change one file, write it" deflates the one file and nothing else. This is the
+    /// write; [`Archive::to_bytes_recompressed`] is the one which deflates everything again.
+    ///
+    /// What the written archive is:
+    ///
+    /// - The members are the entries of the manifest, in its order. `.` is the archive itself
+    ///   and is no member, and `./manifest.xml` is written from the entries, so what a caller
+    ///   changed in the manifest is in it.
+    /// - An entry the manifest lists and the archive holds no bytes for stays a manifest entry
+    ///   and gets no member, which is how such an entry was read.
+    /// - A directory member of the input is not written: a COMBINE archive lists files, and
+    ///   the directories a path needs are made by whoever extracts it.
+    /// - An encrypted member the core can decrypt, which is one under the traditional PKWARE
+    ///   cipher, is written as the plaintext it holds, deflated. The core writes no encrypted
+    ///   archive, as python's `zipfile` writes none, and copying the ciphertext of one member
+    ///   would leave an archive half encrypted with a manifest in the clear beside it. Reading
+    ///   such an archive needs its password, so writing it needs one too, and an archive which
+    ///   was opened without the password is refused.
+    /// - An encrypted member the core cannot decrypt is not written at all. A member under
+    ///   WinZip AES, compression method 99, has no plaintext the core could write and is no
+    ///   blob it may copy either, since the copy would carry the encryption flag into an
+    ///   archive whose other members are in the clear, so the write fails as unsupported, as
+    ///   reading that member does.
+    /// - The bytes in front of an archive are dropped. An archive behind a self extracting stub
+    ///   is read, with the offsets of its central directory corrected by the length of the
+    ///   stub, and what is written is the archive alone, without the stub.
+    /// - A copied member keeps its own modification time and its own external attributes, so
+    ///   that reading an archive and writing it back resets neither the timestamp nor the unix
+    ///   mode of the files it holds. A member the core compresses itself, which is the manifest
+    ///   and every entry the caller handed over, carries the zip epoch, 1980-01-01 00:00:00,
+    ///   and a regular file of mode 644: the core has no clock, since `SystemTime::now` is not
+    ///   available on `wasm32-unknown-unknown`, and a fixed stamp keeps a write deterministic. What a copy does not keep are the extra fields of the
+    ///   member: an Info-ZIP extended timestamp (0x5455), which holds the modification time to
+    ///   the second, goes with them, and the member keeps the MS-DOS fields, which hold that
+    ///   time rounded down to two seconds. See [`Writer::add_raw`] for the whole of it.
+    ///
+    /// # Errors
+    ///
+    /// [`OmexError::Refused`] if a member is encrypted and the archive was opened without its
+    /// password, or if the name of a member is longer than the 16 bit field which holds it;
+    /// [`OmexError::Unsupported`] for a member under WinZip AES, and the errors of
+    /// [`Reader::inflate`] for a member which has to be read to be written.
+    pub fn to_bytes(&mut self) -> Result<Vec<u8>, OmexError> {
+        self.write(None)
+    }
+
+    /// Write the archive, deflating every entry at `level`.
+    ///
+    /// This is the write for an archive which was built from scratch or has to come out at a
+    /// chosen compression level; [`Archive::to_bytes`] is the one which copies. Every member is
+    /// inflated and deflated again, which is what the python implementation did for every
+    /// member of every archive on every write, and it costs accordingly.
+    ///
+    /// The written archive is the one [`Archive::to_bytes`] describes, with every member
+    /// deflated at `level`. Nothing is copied here, so no member keeps the modification time it
+    /// had: every one of them carries the zip epoch.
+    ///
+    /// # Errors
+    ///
+    /// [`OmexError::Refused`] if `level` is above 9, the highest level deflate knows, and the
+    /// errors of [`Archive::to_bytes`].
+    pub fn to_bytes_recompressed(&mut self, level: u32) -> Result<Vec<u8>, OmexError> {
+        self.write(Some(level))
+    }
+
+    /// Write the archive, deflating every member at `level` when there is one.
+    ///
+    /// # Errors
+    ///
+    /// Those of [`Archive::to_bytes`] and [`Archive::to_bytes_recompressed`].
+    fn write(&mut self, level: Option<u32>) -> Result<Vec<u8>, OmexError> {
+        let recompress = level.is_some();
+        let level = level.unwrap_or(DEFLATE_LEVEL);
+        // the entries and the manifest are taken first, so that the loop can inflate a member
+        // which is not copied and cache it, as a caller who asks for one does
+        let entries: Vec<Entry> = self.manifest.entries().to_vec();
+        let xml = self.manifest.to_xml();
+        let mut writer = Writer::new();
+        for entry in &entries {
+            let location = entry.location.as_str();
+            if location == ARCHIVE_LOCATION {
+                continue;
+            }
+            let name = member_name(location);
+            if location == MANIFEST_LOCATION {
+                writer.add_deflated(name, xml.as_bytes(), level)?;
+                continue;
+            }
+            match self.action(location, recompress) {
+                Action::Nothing => {}
+                Action::Copy(index) => {
+                    let (reader, member) = self.member(index)?;
+                    writer.add_raw(name, member, reader.raw(member)?)?;
+                }
+                Action::Deflate => {
+                    let data = self.entry_bytes(location)?;
+                    writer.add_deflated(name, data, level)?;
+                }
+            }
+        }
+        Ok(writer.finish())
+    }
+
+    /// What the write does with the entry of `location`, which is neither `.` nor the manifest.
+    ///
+    /// The one place which decides whether a member is copied. A member of the input which the
+    /// caller never replaced is, whether or not it was read, unless the whole archive is
+    /// deflated again or the member is encrypted, which no member of a written archive is.
+    fn action(&self, location: &str, recompress: bool) -> Action {
+        let index = match self.content.get(location) {
+            None => return Action::Nothing,
+            Some(Content::Replaced(_)) => return Action::Deflate,
+            Some(Content::Inflated { index, .. } | Content::Member(index)) => *index,
+        };
+        // a member which is not there is no encrypted one as far as this goes: the copy of
+        // `write` is where it is reported
+        let encrypted = self
+            .member(index)
+            .is_ok_and(|(_, member)| member.is_encrypted());
+        if recompress || encrypted {
+            return Action::Deflate;
+        }
+        Action::Copy(index)
+    }
+
+    /// The input and the member with this index of it.
     ///
     /// A `Content::Member` exists only in an archive which was opened from bytes, and such an
-    /// archive always holds its reader, so the error below is an invariant guard and not a path
-    /// a caller can reach.
-    fn inflate_member(&mut self, index: usize) -> Result<Vec<u8>, OmexError> {
+    /// archive always holds its reader, so both errors are invariant guards and not a path a
+    /// caller can reach.
+    ///
+    /// # Errors
+    ///
+    /// [`OmexError::Malformed`] if the archive has no input or no such member.
+    fn member(&self, index: usize) -> Result<(&Reader, &Member), OmexError> {
         let reader = self.reader.as_ref().ok_or_else(|| {
             OmexError::Malformed("member of an archive without input".to_string())
         })?;
@@ -254,6 +402,14 @@ impl Archive {
             .members()
             .get(index)
             .ok_or_else(|| OmexError::Malformed(format!("no member {index}")))?;
+        Ok((reader, member))
+    }
+
+    /// Inflate the member with this index of the input.
+    ///
+    /// The one place where a member is inflated.
+    fn inflate_member(&mut self, index: usize) -> Result<Vec<u8>, OmexError> {
+        let (reader, member) = self.member(index)?;
         let data = reader.inflate(member)?;
         #[cfg(test)]
         {
@@ -261,6 +417,24 @@ impl Archive {
         }
         Ok(data)
     }
+}
+
+/// What a write does with the bytes of one entry.
+enum Action {
+    /// Copy the member with this index of the input as the compressed blob it is.
+    Copy(usize),
+    /// Deflate the bytes of the entry, inflating its member for it when they are not at hand.
+    Deflate,
+    /// Write no member: the manifest lists the entry and the archive holds no bytes for it.
+    Nothing,
+}
+
+/// The name of the member which holds the entry of `location`.
+///
+/// Every location is normalized, so it is `./` and the name of the member behind it. The
+/// archive itself (`.`) is no member and is never asked about here.
+fn member_name(location: &str) -> &str {
+    location.strip_prefix("./").unwrap_or(location)
 }
 
 /// The suffix of a location without the dot, empty when the file name has none.
