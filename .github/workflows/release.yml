@@ -1,0 +1,303 @@
+# The release of `pymetadata-core`: the wheels and the sdist on PyPI, the WebAssembly package on
+# npm, and the release of this repository, whose body is `release-notes/X.Y.Z.md`. Nothing goes to
+# crates.io.
+#
+# The filename matters: the pending publisher of PyPI names `release.yml` and the environment
+# `pypi`, and the OIDC token the publish job presents carries both. Rename either and the upload
+# fails with a message which does not say why. Nothing here holds a token: trusted publishing
+# exchanges the OIDC identity of the job for an upload token at the moment of the upload.
+#
+# A pull request which changes this file, and `workflow_dispatch`, build the wheels and the sdist
+# and publish nothing: every publishing job needs the `push` event and a tag ref. The job
+# `npm_dry_run` has no such guard on purpose: it runs on pull requests too and publishes nothing,
+# it only proves the npm path (build, prepack, pack) before a tag depends on it.
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  # the only way to exercise this workflow before it is needed: it is not dispatchable from a
+  # branch, and its first execution would otherwise be the release. Scoped to this file, so an
+  # ordinary pull request does not build five wheels
+  pull_request:
+    paths:
+      - ".github/workflows/release.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# a release is never superseded: cancelling could kill a run between two uploads
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  wheels:
+    name: wheel ${{ matrix.name }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      # one platform failing should not hide whether the others build
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux-x86_64
+            runner: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            # the wheel is loadable on the runner, so the suite runs against the real artifact
+            smoke: true
+          - name: linux-aarch64
+            runner: ubuntu-latest
+            target: aarch64-unknown-linux-gnu
+            # cross compiled in a container on an x86_64 runner: nothing here can load it
+            smoke: false
+          - name: macos-arm64
+            runner: macos-latest
+            target: aarch64-apple-darwin
+            smoke: true
+          - name: macos-x86_64
+            runner: macos-latest
+            target: x86_64-apple-darwin
+            # built on an arm64 runner against the x86_64 slice of the SDK: not loadable here
+            smoke: false
+          - name: windows-x64
+            runner: windows-latest
+            target: x86_64-pc-windows-msvc
+            smoke: true
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      # on every platform, not only where the smoke test runs: maturin probes the python it finds
+      # on PATH, and the abi3 floor of the extension is the python of `pyproject.toml`
+      - uses: actions/setup-python@v7.1.0
+        with:
+          python-version: "3.13"
+      # --locked, so the committed Cargo.lock is what every published wheel was built from. The
+      # manifest path, the module name and the features are read from `pyproject.toml`
+      - name: Build the wheel
+        uses: PyO3/maturin-action@v1.51.0
+        with:
+          command: build
+          target: ${{ matrix.target }}
+          # the floor maturin-action picks for the target. The crate has no C code, so the cross
+          # image of aarch64 has no compiler constraint, as the reference project's has
+          manylinux: auto
+          args: --release --locked --out dist
+      # `pymetadata` is what the tests cross-check against, at the version `uv.lock` pins
+      - name: Install the test dependencies
+        if: matrix.smoke
+        run: python -m pip install pytest==9.2.0 pymetadata==0.8.3
+      # `--no-index`, so the wheel under test is the one just built and nothing is fetched
+      - name: Install the built wheel
+        if: matrix.smoke
+        run: python -m pip install --no-index --find-links dist pymetadata-core
+      # a step of its own per command: a multi-line `run:` reports only the exit code of its last
+      # line under pwsh
+      - name: Test the installed wheel
+        if: matrix.smoke
+        run: python -m pytest python/tests -q
+      - uses: actions/upload-artifact@v7.0.2
+        with:
+          name: dist-${{ matrix.name }}
+          path: dist/*.whl
+          if-no-files-found: error
+
+  sdist:
+    name: sdist
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v7.1.0
+        with:
+          python-version: "3.13"
+      # `command: sdist`, which writes the tarball and nothing else. No `--locked`: the sdist
+      # carries a workspace maturin assembles from the crates it needs, which is not the one the
+      # committed lock was resolved for
+      - name: Build the source distribution
+        uses: PyO3/maturin-action@v1.51.0
+        with:
+          command: sdist
+          args: --out dist
+      - uses: actions/upload-artifact@v7.0.2
+        with:
+          name: dist-sdist
+          path: dist/*.tar.gz
+          if-no-files-found: error
+
+  publish:
+    name: publish to PyPI
+    # a pushed tag and nothing else. The event test is not redundant beside the ref test:
+    # `workflow_dispatch` can be aimed at a tag as readily as at a branch
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+    # `npm_dry_run` too: a broken npm path must block the upload to PyPI, since a tag cannot be
+    # deleted once the upload has happened and the later jobs are skipped
+    needs: [wheels, sdist, npm_dry_run]
+    runs-on: ubuntu-latest
+    # the name the pending publisher of PyPI was registered with, and where a required reviewer
+    # belongs if the upload is to have a human gate
+    environment: pypi
+    permissions:
+      # trusted publishing: the only credential of this workflow, valid for one upload
+      id-token: write
+    steps:
+      # The notes are read before the upload and not after: an upload cannot be taken back, a tag
+      # whose notes were forgotten is a run which failed before it spent the version number
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - name: The release notes of the version are written
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          test -f "release-notes/${version}.md" || {
+            echo "release-notes/${version}.md is missing, so the release of ${GITHUB_REF_NAME} would have no body"
+            exit 1
+          }
+      - uses: actions/download-artifact@v8.0.2
+        with:
+          pattern: dist-*
+          merge-multiple: true
+          path: dist
+      # the count is the guard: a duplicate filename would replace another file in
+      # `merge-multiple` and take the count below six
+      - name: Six artifacts, five wheels and one sdist
+        run: |
+          set -euo pipefail
+          ls -l dist
+          wheels=$(find dist -maxdepth 1 -name '*.whl' | wc -l)
+          sdists=$(find dist -maxdepth 1 -name '*.tar.gz' | wc -l)
+          others=$(find dist -maxdepth 1 -type f ! -name '*.whl' ! -name '*.tar.gz' | wc -l)
+          echo "wheels=$wheels sdists=$sdists others=$others"
+          test "$wheels" -eq 5
+          test "$sdists" -eq 1
+          test "$others" -eq 0
+      # a tag which does not name the version of the artifacts means the version was not bumped
+      # or the wrong commit was tagged, and PyPI never gives a filename back
+      - name: The tag names the version of the artifacts
+        run: |
+          set -euo pipefail
+          sdist=$(find dist -maxdepth 1 -name 'pymetadata_core-*.tar.gz')
+          version=$(basename "$sdist" .tar.gz)
+          version=${version#pymetadata_core-}
+          echo "tag=${GITHUB_REF_NAME} artifact version=${version}"
+          test "${GITHUB_REF_NAME}" = "v${version}"
+          for wheel in dist/*.whl; do
+            case "$(basename "$wheel")" in
+              "pymetadata_core-${version}-"*) ;;
+              *) echo "$wheel is not version ${version}"; exit 1 ;;
+            esac
+          done
+      - uses: pypa/gh-action-pypi-publish@v1.14.3
+        with:
+          packages-dir: dist
+          # a re-run of this workflow after the upload succeeded, because a later job failed, must
+          # not fail here: the tag cannot be deleted and pushed again
+          skip-existing: true
+          # the digest of every uploaded file in the log
+          print-hash: true
+          # PEP 740 attestations, signed with the same OIDC identity as the upload
+          attestations: true
+
+  # the npm path, without the publish, on every run including a pull request which changes this
+  # file: the publish job below is tag-gated, so without this its first execution would be the
+  # release. Same commands, same order
+  npm_dry_run:
+    name: npm package dry run
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install the toolchain of rust-toolchain.toml
+        run: rustup show active-toolchain || rustup toolchain install
+      - uses: actions/setup-node@v7.1.0
+        with:
+          node-version: "24"
+      - run: node js/build.mjs
+      - run: node prepack.mjs
+        working-directory: js
+      - run: npm pack --dry-run
+        working-directory: js
+
+  npm:
+    name: publish to npm
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+    # after PyPI, so that a release never carries a module on npm for a version the index lacks
+    needs: [publish, npm_dry_run]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # trusted publishing and the provenance attestation of npm
+      id-token: write
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install the toolchain of rust-toolchain.toml
+        run: rustup show active-toolchain || rustup toolchain install
+      - uses: actions/setup-node@v7.1.0
+        with:
+          node-version: "24"
+          registry-url: https://registry.npmjs.org
+      # built here and not downloaded: the wheels are native, the module is one artifact for every
+      # platform. `build.mjs` runs the release cargo build into the gitignored `js/runtime/`, which
+      # nothing else populates, and `prepack.mjs` below only checks that it is there and current
+      - run: node js/build.mjs
+      - name: npm publishes with trusted publishing
+        run: |
+          # the single quotes hold JavaScript, whose template literals are not shell expansions
+          # shellcheck disable=SC2016
+          node -e '
+            const [major, minor, patch] = process.argv[1].split(".").map(Number);
+            const ok = major > 11 || (major === 11 && (minor > 5 || (minor === 5 && patch >= 1)));
+            if (!ok) { console.error(`npm ${process.argv[1]} has no trusted publishing, 11.5.1 or newer has`); process.exit(1); }
+          ' "$(npm --version)"
+      # `prepack` checks that the module is current, copies the license and refuses a version which
+      # is not the version of the crates; running it first fails before the registry is touched
+      - name: Publish
+        working-directory: js
+        run: |
+          set -euo pipefail
+          node prepack.mjs
+          version="$(node -p "require('./package.json').version")"
+          test "${GITHUB_REF_NAME}" = "v${version}"
+          if npm view "@matthiaskoenig/pymetadata-core@${version}" version >/dev/null 2>&1; then
+            echo "::notice::@matthiaskoenig/pymetadata-core ${version} is on npm already, nothing is published"
+            exit 0
+          fi
+          npm publish --provenance --access public
+
+  github_release:
+    name: the release of the tag
+    # once PyPI and npm carry the version and not before, so a release never announces a version
+    # an index does not have
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+    needs: [publish, npm]
+    runs-on: ubuntu-latest
+    permissions:
+      # the only write of this workflow, scoped to this job
+      contents: write
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      # idempotent: a run repeated on a tag whose release exists says so and stops
+      - name: The release of the tag, whose body is the release notes of its version
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          if gh release view "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" > /dev/null 2>&1; then
+            echo "::notice::the release ${GITHUB_REF_NAME} exists already, nothing is created"
+            exit 0
+          fi
+          gh release create "${GITHUB_REF_NAME}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --verify-tag \
+            --latest \
+            --title "pymetadata-core ${version}" \
+            --notes-file "release-notes/${version}.md"

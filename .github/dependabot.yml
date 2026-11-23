@@ -1,0 +1,64 @@
+# Keep the GitHub Actions of the workflows, the cargo dependencies and the locked python
+# dependencies up to date, monthly, since every update pull request runs the checks of `ci.yml`.
+#
+# Every action in `ci.yml` and `release.yml` is pinned to an exact version rather than to a moving
+# major tag, which is the only way a release workflow can be reproducible and is also how a pin
+# goes stale without anyone noticing. This file is what notices.
+# See https://docs.github.com/code-security/dependabot/dependabot-version-updates
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    # a single pull request for all action updates instead of one per action
+    groups:
+      github-actions:
+        patterns:
+          - "*"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "ci"
+
+  # `Cargo.lock` is committed and is what every `--locked` gate and every published wheel is built
+  # from, so the lock is what moves; the lower bounds of the manifests are only raised by hand
+  - package-ecosystem: "cargo"
+    directory: "/"
+    versioning-strategy: lockfile-only
+    schedule:
+      interval: "monthly"
+    groups:
+      cargo-dependencies:
+        patterns:
+          - "*"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "build"
+
+  # the locked python dependencies (`uv.lock`), bumped together. The `uv` ecosystem and not `pip`,
+  # since `uv.lock` is the file which pins the development environment
+  - package-ecosystem: "uv"
+    directory: "/"
+    versioning-strategy: lockfile-only
+    schedule:
+      interval: "monthly"
+    groups:
+      python-dependencies:
+        patterns:
+          - "*"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "build"
+
+  # `js/package.json` declares no dependency today, so this has nothing to do until one is added
+  - package-ecosystem: "npm"
+    directory: "/js"
+    schedule:
+      interval: "monthly"
+    groups:
+      npm-dependencies:
+        patterns:
+          - "*"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "build"

@@ -46,3 +46,15 @@ features = ["extension-module"]
 testpaths = ["python/tests"]
 # a warning is a failure, so a deprecation of pyo3 or of pymetadata shows up in the tests
 filterwarnings = ["error"]
+
+[tool.ty.environment]
+# the python layer is the src layout of `python/`; the checked python version is inferred
+# from `project.requires-python`
+root = ["./python"]
+
+[tool.ty.src]
+include = ["python", "scripts"]
+
+[tool.ty.terminal]
+# warnings are failures: the tree stays at zero diagnostics
+error-on-warning = true

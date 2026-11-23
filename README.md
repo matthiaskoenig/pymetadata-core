@@ -36,9 +36,11 @@ The python binding is not a default member of the workspace, so it has gates of 
 
 ```bash
 cargo clippy -p pymetadata-python --locked --all-targets -- -D warnings
+cargo test -p pymetadata-python --locked
 uv sync --locked
 uv run --no-sync ruff check
 uv run --no-sync ruff format --check
+uvx ty@0.0.108 check
 uv run --no-sync pytest python/tests -q
 ```
 
@@ -48,7 +50,12 @@ The wheel which ships is a different job: it is built with maturin from the lock
 uv run --with 'maturin>=1.16,<2' maturin build --release --locked -o dist
 uv pip install --force-reinstall dist/*.whl
 uv run --no-sync pytest python/tests -q
+uv run --no-sync --with 'maturin>=1.16,<2' maturin build --release --sdist -o target/sdist
 ```
+
+The last line builds the source distribution of the release; it takes no `--locked`, since the workspace of an sdist is not the one `Cargo.lock` was resolved for.
+
+Continuous integration (`.github/workflows/ci.yml`) runs exactly these lists as the jobs `checks`, `wasm`, `js`, `python`, `ruff` and `ty`, which are the required checks of `.github/rulesets/develop.json`. How a release is made is in `docs/release.md`.
 
 `crates/core/src/formats.rs` and `crates/core/tests/data/formats.json` are generated from `pymetadata.omex` by `scripts/formats_table.py`; run it from a pymetadata checkout with `uv run python`.
 

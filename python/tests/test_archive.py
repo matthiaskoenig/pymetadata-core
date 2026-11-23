@@ -193,7 +193,7 @@ def test_every_level_of_0_to_9_writes_a_readable_archive(level: int):
 def test_a_level_which_is_no_integer_is_a_type_error():
     """A wrong type is a `TypeError`, as for the other arguments, not an `OmexError`."""
     with pytest.raises(TypeError):
-        Archive().to_bytes(level="9")  # type: ignore[arg-type]
+        Archive().to_bytes(level="9")  # ty: ignore[invalid-argument-type]  deliberately the wrong type
 
 
 def test_normalize_location_cases():

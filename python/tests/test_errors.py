@@ -94,9 +94,9 @@ def test_writing_an_archive_opened_without_its_password_is_refused():
 def test_arguments_of_the_wrong_type_are_a_type_error():
     """`str` is not `bytes`: it fails loudly and is not encoded behind the caller's back."""
     with pytest.raises(TypeError):
-        Archive.from_bytes("a string, not bytes")  # type: ignore[arg-type]
+        Archive.from_bytes("a string, not bytes")  # ty: ignore[invalid-argument-type]  deliberately the wrong type
     with pytest.raises(TypeError):
-        Archive().set_entry("a.txt", "x", False, "text")  # type: ignore[arg-type]
+        Archive().set_entry("a.txt", "x", False, "text")  # ty: ignore[invalid-argument-type]  deliberately the wrong type
 
 
 def test_an_archive_in_use_by_another_thread_says_so():

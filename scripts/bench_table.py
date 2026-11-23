@@ -167,10 +167,10 @@ def shown_ms(host: str, runs: list[tuple[float, int]] | None) -> str:
 
 def js() -> None:
     """Print the node and chrome tables, one column per host."""
-    hosts: dict[str, dict[tuple[str, str], list[float]]] = {}
+    hosts: dict[str, dict[tuple[str, str], list[tuple[float, int]]]] = {}
     sizes: dict[str, int] = {}
     for host in ("node", "chrome"):
-        cells: dict[tuple[str, str], list[float]] = {}
+        cells: dict[tuple[str, str], list[tuple[float, int]]] = {}
         for path in sorted(RUNS.glob(f"{host}-*.json")):
             for row in json.loads(path.read_text()):
                 cells.setdefault((row["archive"], row["op"]), []).append(
