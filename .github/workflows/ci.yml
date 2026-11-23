@@ -110,7 +110,7 @@ jobs:
       # `pymetadata-python` is no default member, so the cargo commands of `checks` build none of
       # it and these are the only gates it has. The runner image ships an older `python3` than
       # the one the development environment wants, so uv is told which interpreter to take
-      - uses: astral-sh/setup-uv@v10.3.3
+      - uses: astral-sh/setup-uv@v10.4.0
       - uses: actions/setup-python@v7.1.0
         with:
           python-version: "3.13"
@@ -165,7 +165,7 @@ jobs:
       - name: Install the toolchain of rust-toolchain.toml
         run: rustup show active-toolchain || rustup toolchain install
       - uses: Swatinem/rust-cache@v2.9.3
-      - uses: astral-sh/setup-uv@v10.3.3
+      - uses: astral-sh/setup-uv@v10.4.0
       - uses: actions/setup-python@v7.1.0
         with:
           python-version: "3.13"
