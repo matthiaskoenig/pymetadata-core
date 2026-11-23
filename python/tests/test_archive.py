@@ -331,7 +331,6 @@ def test_set_entry_format_refuses_what_it_cannot_change() -> None:
     for location in (".", MANIFEST, "manifest.xml", "./nothing.xml"):
         with pytest.raises(OmexError):
             archive.set_entry_format(location, lookup_format("txt"), False)
-    assert archive.entry_bytes  # the archive is still usable
     assert "./nothing.xml" not in [location for location, _, _ in archive.entries]
 
 
@@ -340,4 +339,49 @@ def test_set_entry_format_keeps_the_order_of_the_entries() -> None:
     archive = Archive.from_bytes(ARCHIVES[2].read_bytes())
     before = [location for location, _, _ in archive.entries]
     archive.set_entry_format(before[-1], lookup_format("txt"), False)
+    assert [location for location, _, _ in archive.entries] == before
+
+
+def test_reorder_entries_sets_the_order_of_the_written_archive() -> None:
+    """The order a host sets is the order of the written manifest and its members."""
+    archive = Archive.from_bytes(ARCHIVES[3].read_bytes())
+    wanted = sorted(
+        location
+        for location, _, _ in archive.entries
+        if location not in (".", MANIFEST)
+    )
+    assert wanted != [
+        location
+        for location, _, _ in archive.entries
+        if location not in (".", MANIFEST)
+    ], "the fixture is worth the test only if the orders differ"
+    archive.reorder_entries(wanted)
+    written = Archive.from_bytes(archive.to_bytes())
+    assert [
+        location
+        for location, _, _ in written.entries
+        if location not in (".", MANIFEST)
+    ] == wanted
+    names = [
+        name
+        for name in zipfile.ZipFile(io.BytesIO(archive.to_bytes())).namelist()
+        if name != "manifest.xml"
+    ]
+    # the fixture declares one entry no member provides, which stays a manifest entry
+    # without becoming a member, so the members are the entries which have bytes
+    assert names == [
+        location.removeprefix("./")
+        for location in wanted
+        if archive.has_bytes(location)
+    ]
+    assert not archive.has_bytes("./iCGB21FR_memote.html")
+
+
+def test_reorder_entries_refuses_an_order_it_cannot_apply() -> None:
+    """An unknown location, a repeated one and one outside of the archive are refused."""
+    archive = Archive.from_bytes(ARCHIVES[2].read_bytes())
+    before = [location for location, _, _ in archive.entries]
+    for order in (["./nothing.xml"], [before[2], before[2]], ["../evil.txt"]):
+        with pytest.raises(OmexError):
+            archive.reorder_entries(order)
     assert [location for location, _, _ in archive.entries] == before

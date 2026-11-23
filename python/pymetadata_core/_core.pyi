@@ -1,5 +1,6 @@
 """Type stubs of the extension module `pymetadata_core._core`."""
 
+from collections.abc import Sequence
 from typing import final
 
 __version__: str
@@ -182,6 +183,26 @@ class Archive:
         Raises:
             OmexError: for a location outside of the archive, as `set_entry` and
                 `entry_bytes` raise it; the archive is unchanged then.
+            ArchiveBusyError: if another thread is using this archive.
+        """
+
+    def reorder_entries(self, order: Sequence[str]) -> None:
+        """Reorder the entries this names, among the positions they hold now.
+
+        `to_bytes` lists the members in the order of the manifest, which for an archive
+        that was opened is what its `manifest.xml` declared, and then the members it did
+        not list in the order of the container. A host which keeps an order of its own
+        says so here: the locations of `order` are laid out in that order, into the slots
+        those same entries hold today, lowest slot first, and an entry which is not named
+        keeps its position. Naming every entry therefore sets the whole order of the
+        written manifest and of the members behind it.
+
+        Args:
+            order: the locations to lay out, normalized.
+
+        Raises:
+            OmexError: for a location no entry holds, for one named twice and for one
+                outside of the archive; the archive is unchanged then.
             ArchiveBusyError: if another thread is using this archive.
         """
 

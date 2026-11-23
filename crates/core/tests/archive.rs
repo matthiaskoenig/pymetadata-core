@@ -630,3 +630,79 @@ fn set_entry_format_reports_an_unknown_location_as_not_found() {
     assert!(matches!(error, Err(OmexError::NotFound(_))), "{error:?}");
     assert!(archive.entry("./nothing.xml").is_none());
 }
+
+/// The order a host sets is the order the written archive and its manifest carry.
+#[test]
+fn reorder_entries_survives_a_round_trip() {
+    let mut archive = Archive::from_bytes(&fixture("iCGB21FR.omex")).unwrap();
+    let mut wanted: Vec<String> = archive
+        .locations()
+        .filter(|location| *location != "." && *location != "./manifest.xml")
+        .map(str::to_string)
+        .collect();
+    wanted.sort();
+    assert_ne!(
+        wanted,
+        archive
+            .locations()
+            .filter(|l| *l != "." && *l != "./manifest.xml")
+            .map(str::to_string)
+            .collect::<Vec<_>>(),
+        "the fixture is worth the test only if the orders differ"
+    );
+    archive.reorder_entries(&wanted).unwrap();
+    let written = archive.to_bytes().unwrap();
+    let result = Archive::from_bytes(&written).unwrap();
+    let after: Vec<String> = result
+        .locations()
+        .filter(|location| *location != "." && *location != "./manifest.xml")
+        .map(str::to_string)
+        .collect();
+    assert_eq!(after, wanted);
+    assert_eq!(
+        result.declared_entries().len(),
+        archive.manifest().entries().len(),
+        "every entry is declared, in that order"
+    );
+}
+
+/// Naming a few entries sorts those few, into the slots they held, and moves nothing else.
+#[test]
+fn reorder_entries_permutes_the_named_entries_among_their_slots() {
+    let mut archive = Archive::from_bytes(&fixture("CompModels.omex")).unwrap();
+    let before: Vec<String> = archive.locations().map(str::to_string).collect();
+    let first = before[2].clone();
+    let last = before[before.len() - 1].clone();
+    archive
+        .reorder_entries(&[last.clone(), first.clone()])
+        .unwrap();
+    let after: Vec<String> = archive.locations().map(str::to_string).collect();
+    assert_eq!(after[2], last, "the named pair swapped");
+    assert_eq!(after[after.len() - 1], first);
+    for index in 0..before.len() {
+        if index != 2 && index != before.len() - 1 {
+            assert_eq!(after[index], before[index], "entry {index} moved");
+        }
+    }
+}
+
+/// An order which names an unknown location, or one twice, changes nothing.
+#[test]
+fn reorder_entries_validates_before_it_moves() {
+    let mut archive = Archive::from_bytes(&fixture("CompModels.omex")).unwrap();
+    let before: Vec<String> = archive.locations().map(str::to_string).collect();
+    let unknown = archive.reorder_entries(&["./nothing.xml"]);
+    assert!(
+        matches!(unknown, Err(OmexError::NotFound(_))),
+        "{unknown:?}"
+    );
+    let twice = archive.reorder_entries(&[before[2].clone(), before[2].clone()]);
+    assert!(matches!(twice, Err(OmexError::Refused(_))), "{twice:?}");
+    let outside = archive.reorder_entries(&["../evil.txt"]);
+    assert!(matches!(outside, Err(OmexError::Refused(_))), "{outside:?}");
+    assert_eq!(
+        archive.locations().map(str::to_string).collect::<Vec<_>>(),
+        before,
+        "a refused order moves nothing"
+    );
+}

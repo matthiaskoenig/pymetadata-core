@@ -192,6 +192,21 @@ impl Archive {
         Ok(removed.is_some())
     }
 
+    /// Reorder the entries this names, among the positions they hold now.
+    ///
+    /// The write lists the members in the order of the manifest, which for an archive that
+    /// was opened is what its `manifest.xml` declared and then the members it did not list.
+    /// A host which keeps its own order says so with this call: the locations given are laid
+    /// out in that order, into the slots those same entries hold today, lowest slot first,
+    /// and an entry which is not named stays where it is.
+    ///
+    /// An unknown location is an `OmexError`, as is one named twice and one outside of the
+    /// archive; the archive is unchanged then.
+    fn reorder_entries(slf: &Bound<'_, Self>, order: Vec<String>) -> PyResult<()> {
+        let mut this = slf.try_borrow_mut().map_err(busy)?;
+        this.inner.reorder_entries(&order).map_err(to_py_err)
+    }
+
     /// Write the archive.
     ///
     /// Without `recompress`, every entry which was not replaced is copied as the compressed

@@ -257,6 +257,51 @@ impl Manifest {
         }
     }
 
+    /// Reorder the entries this names, among the positions they hold now.
+    ///
+    /// The entries of `order` are laid out in the order given, into the slots those same
+    /// entries occupy today, lowest slot first. An entry `order` does not name keeps its
+    /// position, so a caller which names every entry sets the whole order, and one which
+    /// names a few sorts those few among themselves and moves nothing else. The entries the
+    /// specification prescribes are ordinary entries here: naming them places them, leaving
+    /// them out keeps them where they are, which is the front of a manifest this core wrote.
+    ///
+    /// # Errors
+    ///
+    /// [`OmexError::Refused`] for a location which cannot be normalized and for one `order`
+    /// names twice, [`OmexError::NotFound`] for a location no entry holds. The manifest is
+    /// unchanged then: it is validated before anything moves.
+    pub fn reorder(&mut self, order: &[impl AsRef<str>]) -> Result<(), OmexError> {
+        let mut slots = Vec::with_capacity(order.len());
+        let mut wanted = Vec::with_capacity(order.len());
+        for location in order {
+            let location = normalize_location(location.as_ref())?;
+            let Some(&slot) = self.index.get(&location) else {
+                return Err(OmexError::NotFound(format!("no entry at '{location}'")));
+            };
+            if wanted.contains(&location) {
+                return Err(OmexError::Refused(format!(
+                    "the order names '{location}' twice"
+                )));
+            }
+            slots.push(slot);
+            wanted.push(location);
+        }
+        // the entries are taken out before anything is written: a slot which is written to
+        // may hold an entry this order still has to move
+        let mut moved = Vec::with_capacity(wanted.len());
+        for location in &wanted {
+            let from = self.index[location];
+            moved.push(self.entries[from].clone());
+        }
+        slots.sort_unstable();
+        for (slot, entry) in slots.iter().zip(moved) {
+            self.index.insert(entry.location.clone(), *slot);
+            self.entries[*slot] = entry;
+        }
+        Ok(())
+    }
+
     /// Remove the entry for a location and return it.
     ///
     /// `.` and `./manifest.xml` are required and never removed, nor is an unknown location, all

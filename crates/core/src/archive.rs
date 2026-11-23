@@ -389,6 +389,29 @@ impl Archive {
         Ok(Some(entry))
     }
 
+    /// Reorder the entries this names, among the positions they hold now.
+    ///
+    /// The write lists the members in the order of the manifest, and the manifest of an
+    /// archive which was opened holds the entries its `manifest.xml` declared, then the
+    /// members it did not list, in the order of the central directory. A host which keeps its
+    /// own order therefore loses it on a write, since nothing it does tells this core what
+    /// that order is. This is how it says so.
+    ///
+    /// The entries of `order` are laid out in the order given, into the slots those same
+    /// entries hold today, lowest slot first. An entry `order` does not name stays where it
+    /// is, so naming every entry sets the whole order of the written `manifest.xml` and of
+    /// the members behind it, while naming a few sorts those few and moves nothing else. See
+    /// [`Manifest::reorder`], which this is.
+    ///
+    /// # Errors
+    ///
+    /// [`OmexError::Refused`] for a location which cannot be normalized and for one `order`
+    /// names twice, [`OmexError::NotFound`] for a location no entry holds; the archive is
+    /// unchanged then.
+    pub fn reorder_entries(&mut self, order: &[impl AsRef<str>]) -> Result<(), OmexError> {
+        self.manifest.reorder(order)
+    }
+
     /// Write the archive, copying every entry which did not change as the blob it is.
     ///
     /// An entry whose bytes the caller never replaced is written as the compressed member it
