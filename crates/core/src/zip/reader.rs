@@ -388,8 +388,9 @@ mod tests {
     }
 
     /// A record whose comment length does not match the bytes behind it is read all the same,
-    /// which python's `zipfile` does not: its `_EndRecData` requires the length to match and
-    /// raises `BadZipFile` for this archive, where the core is deliberately more permissive.
+    /// when no record is consistent. Python's `zipfile` reads this archive too, since its
+    /// `_EndRecData` always takes the record closest to the end. The two differ only in the
+    /// selection rule: the core prefers a record whose declared length is consistent.
     #[test]
     fn reads_a_record_with_an_inconsistent_comment_length() {
         let mut bytes = end_record(0, 0);

@@ -56,7 +56,7 @@ static INPUT: Slot<Vec<u8>> = Slot(UnsafeCell::new(Vec::new()));
 /// The output of the last call, which a page reads at `omex_output_ptr`.
 static OUTPUT: Slot<Vec<u8>> = Slot(UnsafeCell::new(Vec::new()));
 
-/// The archive `omex_open` opened, `None` before the first open and after a failed one.
+/// The archive `omex_open` opened or `omex_new` made, `None` before either and after a failed open.
 static ARCHIVE: Slot<Option<Archive>> = Slot(UnsafeCell::new(None));
 
 /// Reserve `len` bytes of input and give back the address a page writes them to.

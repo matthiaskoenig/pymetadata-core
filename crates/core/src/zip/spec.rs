@@ -8,8 +8,8 @@
 //! be a silent interop bug in the one module where a bug corrupts a user's archive. Declared
 //! once, there is nothing to drift.
 //!
-//! What is not here is what a module decided for itself and no archive prescribes: the inflate
-//! budget of the reader ([`super::MAX_INFLATED_SIZE`]), the deflate ceiling and the buffer steps,
+//! What is not here is what only one module speaks, whether the format prescribes it or not: the
+//! inflate budget of the reader ([`super::MAX_INFLATED_SIZE`]), the deflate ceiling and the buffer steps,
 //! and the modification time and the mode the writer stamps on a member it compresses itself.
 
 /// The signature of a local file header.

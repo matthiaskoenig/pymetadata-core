@@ -102,11 +102,14 @@ pub extern "C" fn omex_output_len() -> usize {
 /// which is the work this module exists to remove.
 ///
 /// The archive which was open before is dropped, as `omex_open` drops it. The input buffer is
-/// left as it is, since this call reads no request, and nothing here can fail: the answer is
+/// given back to the instance as `omex_open` does, so a request a page staged before it, such
+/// as the body of a `setEntry` it then abandons, is not resident through the writes which
+/// follow; nothing here can fail: the answer is
 /// always 0 and the output is empty, as it is after an open which succeeded.
 #[unsafe(no_mangle)]
 pub extern "C" fn omex_new() -> i32 {
     panic::install();
+    buffers::release_input();
     buffers::set_archive(Some(Archive::new()));
     buffers::publish(Vec::new());
     OK
@@ -224,7 +227,7 @@ pub extern "C" fn omex_panic_probe() -> i32 {
 /// Run `f` on the open archive and publish what it answers.
 ///
 /// The one place every export which needs an archive goes through, so there is one answer for a
-/// request which arrives before `omex_open` and one shape for the output of all of them.
+/// request which arrives before `omex_open` or `omex_new` and one shape for the output of all of them.
 fn on_archive(f: impl FnOnce(&mut Archive) -> Result<Vec<u8>, CallError>) -> i32 {
     panic::install();
     let answer = buffers::with_archive(|archive| match archive {

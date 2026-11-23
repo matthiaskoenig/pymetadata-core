@@ -29,8 +29,11 @@ cargo check --locked --workspace --exclude pymetadata-python --target wasm32-was
 The JavaScript package under `js/` has its own gates. `node js/build.mjs` comes before the tests, because the module and the fixture archive are built, not committed, and a fresh checkout fails the tests without them. One test builds a second module with the `panic-probe` feature, so it needs `cargo` and the `wasm32-unknown-unknown` target:
 
 ```bash
+cargo build -p pymetadata-wasm --release --locked --target wasm32-unknown-unknown
+cargo test -p pymetadata-wasm --locked
+cargo clippy -p pymetadata-wasm --all-targets --locked -- -D warnings
 node js/build.mjs
-(cd js && npm test && npm pack --dry-run)
+(cd js && npm test && node prepack.mjs && npm pack --dry-run)
 ```
 
 The python binding is not a default member of the workspace, so it has gates of its own. `uv.lock` pins the development environment, as it does in `pymetadata`: `uv sync --locked` creates it from the lock (and fails instead of re-resolving when the lock no longer matches `pyproject.toml`), builds the extension into it and installs `pytest`, `pymetadata` (the tests cross-check against it) and `ruff`. `uv lock --check` verifies the lock alone. The compiled extension lands in `python/pymetadata_core/` and is gitignored.

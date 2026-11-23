@@ -8,13 +8,13 @@
 
 use pymetadata_core::location::suffix;
 use pymetadata_core::wire::{ErrorResponse, ManifestResponse, SetEntryRequest, kind};
-use pymetadata_core::{Archive, Entry, OmexError, guess_format};
+use pymetadata_core::{Archive, Entry, OmexError, guess_format, normalize_location};
 
 /// The kind of a failure of this host which no [`OmexError`] describes.
 ///
 /// The core produces four kinds, the ones of [`kind`], and these two are the host's: no call of
 /// the core answers with either of them. `internal` is a request this host cannot carry out at
-/// all, which is a request before `omex_open` and a pointer and length pair which is no range
+/// all, which is a request before `omex_open` or `omex_new` and a pointer and length pair which is no range
 /// of the memory of the instance.
 pub const INTERNAL: &str = "internal";
 
@@ -205,8 +205,9 @@ pub fn set_entry(archive: &mut Archive, request: &[u8]) -> Result<Vec<u8>, CallE
 pub fn remove_entry(archive: &mut Archive, location: &[u8]) -> Result<Vec<u8>, CallError> {
     let location = location_of(location)?;
     if archive.remove_entry(location)?.is_none() {
+        let key = normalize_location(location)?;
         return Err(CallError::Core(OmexError::NotFound(format!(
-            "no entry at '{location}' to remove"
+            "no entry at '{key}' to remove"
         ))));
     }
     Ok(Vec::new())

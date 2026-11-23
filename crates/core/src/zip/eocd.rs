@@ -49,9 +49,9 @@ impl Eocd {
     ///
     /// The record closest to the end whose comment length matches the bytes behind it wins. If
     /// no record is that consistent, the one closest to the end does, which is deliberately
-    /// more permissive than python's `zipfile`: its `_EndRecData` requires the comment length to
-    /// match and raises `BadZipFile` when no record does, where the core reads such an archive
-    /// all the same.
+    /// different from python's `zipfile`: its `_EndRecData` always takes the record closest to the
+    /// end, whatever comment length that record declares, and truncates the comment, where the
+    /// core prefers a record whose declared length is consistent.
     ///
     /// # Errors
     ///
