@@ -31,3 +31,5 @@ missing_docs = "warn"
 [workspace.dependencies]
 thiserror = "2"
 serde_json = "1"
+roxmltree = { version = "0.21", default-features = false, features = ["std"] }
+serde = { version = "1", features = ["derive"] }

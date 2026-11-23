@@ -12,6 +12,8 @@ keywords.workspace = true
 categories.workspace = true
 
 [dependencies]
+roxmltree.workspace = true
+serde.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
