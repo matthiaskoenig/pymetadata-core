@@ -14,13 +14,14 @@ A Rust core which reads and writes COMBINE archives (OMEX, a zip with a `manifes
 
 What continuous integration runs, so `--locked` here as well: the committed `Cargo.lock` is what is checked. `missing_docs` is a workspace lint, so every public item carries a doc comment and `clippy -D warnings` fails on an undocumented one.
 
-The release build of the wasm module comes first, and not because `cargo test` needs it to compile: `crates/wasm/tests/imports.rs` reads the built module and asserts that it imports nothing, which is the property the hand-rolled zip container of this workspace exists for. The test fails when the module is missing, or older than a source, a manifest or the lock it was built from, rather than skipping, so a checkout which never built it has no passing `cargo test` to read as an answer. `cargo test` does not build another target by itself, which is why the line is here.
+The release build of the wasm module comes first, and not because `cargo test` needs it to compile: `crates/wasm/tests/imports.rs` reads the built module and asserts that it imports nothing, which is the property the hand-rolled zip container of this workspace exists for. The test fails when the module is missing, or older than a source, a manifest or the lock it was built from, rather than skipping, so a checkout which never built it has no passing `cargo test` to read as an answer. `cargo test` does not build another target by itself, which is why the line is here. The `cargo doc` line is a gate as well: a broken intra-doc link passes every other command of this list and fails there.
 
 ```bash
 cargo fmt --check
 cargo clippy --locked --all-targets -- -D warnings
 cargo build -p pymetadata-wasm --release --locked --target wasm32-unknown-unknown
 cargo test --locked
+RUSTDOCFLAGS="-D warnings" cargo doc --locked --no-deps
 cargo check --locked --workspace --exclude pymetadata-python --target wasm32-unknown-unknown
 cargo check --locked --workspace --exclude pymetadata-python --target wasm32-wasip1
 ```
@@ -57,7 +58,7 @@ The last line builds the source distribution of the release; it takes no `--lock
 
 Continuous integration (`.github/workflows/ci.yml`) runs exactly these lists as the jobs `checks`, `wasm`, `js`, `python`, `ruff` and `ty`, which are the required checks of `.github/rulesets/develop.json`. How a release is made is in `docs/release.md`.
 
-`crates/core/src/formats.rs` and `crates/core/tests/data/formats.json` are generated from `pymetadata.omex` by `scripts/formats_table.py`; run it from a pymetadata checkout with `uv run python`.
+`crates/core/src/formats_table.rs` and `crates/core/tests/data/formats.json` are generated from `pymetadata.omex` by `scripts/formats_table.py`; run it from a pymetadata checkout with `uv run python`. `crates/core/src/formats.rs` is the hand-written logic over that table.
 
 ## License
 

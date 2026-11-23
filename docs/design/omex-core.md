@@ -1,9 +1,10 @@
 # pymetadata-core: the OMEX archive in Rust
 
-**Status:** accepted, not implemented. Issue
+**Status:** implemented in 0.1.0. Issue
 [pymetadata#99](https://github.com/matthiaskoenig/pymetadata/issues/99).
 **Date:** 2026-11-23.
-**Evidence:** `spike/RESULTS.md`.
+**Evidence:** `BENCHMARKS.md`, the numbers of the implementation;
+`spike/RESULTS.md`, the measurements this design was accepted on.
 
 ## Why
 
@@ -161,8 +162,8 @@ Invariants the core keeps, all of them the ones `pymetadata` keeps today:
   archive itself.
 - The manifest always holds `.` with the OMEX format URI and `./manifest.xml`
   with the manifest format URI.
-- An entry outside the archive (`../`), an absolute location and a location
-  which is not in the zip are errors, not silently dropped files.
+- An entry outside the archive (`../`) and an absolute location are errors, not
+  silently dropped files.
 - A location present in the zip but absent from the manifest is kept and
   listed; this is what real archives from BioModels look like.
 
@@ -374,7 +375,7 @@ in 0.1.0.
 ## Risks
 
 - **Hand-rolled zip.** The container is the one piece where a bug corrupts a
-  user's archive. Mitigation: the six real archives of
+  user's archive. Mitigation: the four real archives of
   `pymetadata/tests/data/omex/` are the fixture corpus, every write is read
   back by python's `zipfile` in a test, and `zipfile`'s own output is read by
   the core in the same test, so both directions are pinned against the
