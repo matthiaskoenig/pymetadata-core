@@ -171,7 +171,9 @@ impl Archive {
 
     /// Change how many uncompressed bytes one member may inflate to.
     ///
-    /// The default is [`crate::zip::MAX_INFLATED_SIZE`]; each host has a budget of its own.
+    /// The default is [`crate::zip::MAX_INFLATED_SIZE`], which both hosts of this workspace
+    /// keep: this is for a host which needs a tighter ceiling, see
+    /// [`crate::zip::Reader::with_max_inflated_size`].
     pub fn set_max_inflated_size(&mut self, limit: usize) {
         if let Some(reader) = self.reader.as_mut() {
             reader.set_max_inflated_size(limit);

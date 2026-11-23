@@ -45,6 +45,20 @@ The module offers no way to clear its output buffer, so the loader replaces it w
 
 Two limitations of 0.1.0: `open` takes no password, so an encrypted archive cannot be opened, and a member which inflates to more than 1 GiB is `refused`.
 
+## What differs from the python package
+
+The same core answers both, so an archive reads and writes the same way. These are differences of the two hosts:
+
+| | this package | `pymetadata-core` on PyPI |
+| --- | --- | --- |
+| a password | `open` takes none, so a ZipCrypto archive cannot be opened | `Archive.from_bytes(data, password)` |
+| the format of a new member | `setEntry(location, null, ...)` guesses it from the suffix and the first bytes | `set_entry` takes a format URI, and `guess_format(suffix, head)` is the guess, with the suffix taken by the caller |
+| the raw `manifest.xml` | not available; `manifest()` gives the entries it is written from | `manifest_xml()`, beside the entries |
+| the helpers around a location | none | `normalize_location`, `guess_format`, `lookup_format` |
+| removing an entry which is not there | `removeEntry` throws `not_found` | `remove_entry` returns `False` |
+
+A location outside of the archive, such as `../x.xml`, is `refused` by every call which takes one, here as there.
+
 ## Developing
 
 ```bash

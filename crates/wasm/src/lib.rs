@@ -22,8 +22,11 @@
 //! are the four of [`pymetadata_core::wire::kind`] - `malformed`, `refused`, `unsupported` and
 //! `not_found` - and the two of this host, [`calls::INTERNAL`] and [`calls::PANIC`]. The code is
 //! the bit a page branches on and the kind is what it routes on, which is the layout the sibling
-//! hosts of `pkpdutils-core` and `sbmlsim-core` speak and the one the python binding reports by
-//! the same strings.
+//! hosts of `pkpdutils-core` and `sbmlsim-core` speak. The python binding reports the same four
+//! failures of the core, but as the `Display` prefix of its `OmexError` and not as a field of
+//! its own, and those strings are not these: the prefix of a
+//! [`pymetadata_core::OmexError::NotFound`] reads `not found`, where the kind on the wire is
+//! `not_found`.
 //!
 //! The exports:
 //!

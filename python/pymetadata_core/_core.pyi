@@ -16,9 +16,9 @@ class OmexError(ValueError):
 class ArchiveBusyError(RuntimeError):
     """An `Archive` which another thread is using.
 
-    Inflating an entry and writing the archive run without the GIL, and an archive
-    is used by one call at a time. Use one `Archive` per thread, or wait for the
-    call to return.
+    Inflating an entry, setting an entry and writing the archive run without the
+    GIL, and an archive is used by one call at a time. Use one `Archive` per
+    thread, or wait for the call to return.
     """
 
 @final

@@ -291,6 +291,22 @@ message of its own, the output buffer still holds whatever the call before it
 wrote, and the instance is spent: the loader instantiates a new one rather than
 calling into it again.
 
+Four more differences between the two hosts, all of them of the export list and
+none of them of the core, which `js/README.md` states for a page as well:
+
+- `omex_set_entry` guesses an absent `format` from the suffix of the location
+  and the first bytes of the content, where the python `set_entry` takes one.
+  Python exposes the guess as `guess_format(suffix, head)`, so a python caller
+  takes the suffix of the location itself.
+- There is no export for the bytes of `manifest.xml`: they are written from the
+  entries, so `omex_manifest` is how a page reads the manifest, where python
+  also has `manifest_xml()`.
+- `normalize_location` and `lookup_format` are python-only. A page which needs
+  a format URI by name carries the table itself.
+- `omex_remove_entry` answers `not_found` for an entry which was not there,
+  where `Archive.remove_entry` answers `False`. A location outside of the
+  archive is `refused` by both, and by every other call which takes one.
+
 The cargo feature `panic-probe`, off by default, adds an export which panics
 on purpose. `js/test/loader.test.mjs` builds the module with it into its own
 target directory to prove, in a real engine, that the hook's sentence is what

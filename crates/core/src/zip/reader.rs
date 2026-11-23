@@ -61,9 +61,12 @@ impl Reader {
 
     /// Read the central directory of the archive in `bytes`, inflating `limit` bytes at most.
     ///
-    /// The limit is per member and belongs to the host, because the python host and the wasm
-    /// host have different budgets: one has the memory of the machine, the other 4 GB of
-    /// address space in which an allocation that fails traps the instance.
+    /// The limit is per member and belongs to the host, because what a host can afford to
+    /// inflate is the host's to say: a machine has its memory, and a wasm instance has 4 GB of
+    /// address space in which an allocation that fails traps it. Both hosts of this workspace
+    /// take the default of [`MAX_INFLATED_SIZE`] and set none of their own, which
+    /// `crates/wasm/src/calls.rs` says of the wasm one, so this is the knob of a host which
+    /// needs a tighter ceiling than 1 GiB rather than a budget either of them chose.
     ///
     /// # Errors
     ///
@@ -385,7 +388,8 @@ mod tests {
     }
 
     /// A record whose comment length does not match the bytes behind it is read all the same,
-    /// which is what python's `zipfile` does.
+    /// which python's `zipfile` does not: its `_EndRecData` requires the length to match and
+    /// raises `BadZipFile` for this archive, where the core is deliberately more permissive.
     #[test]
     fn reads_a_record_with_an_inconsistent_comment_length() {
         let mut bytes = end_record(0, 0);

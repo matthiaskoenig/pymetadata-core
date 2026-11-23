@@ -66,7 +66,10 @@ fn refuses_a_wrong_password() {
         for wrong in [&b"wrong"[..], b"", b"test12345", b"Test1234"] {
             let error = read(&bytes, Some(wrong)).unwrap_err();
             // a wrong password passes the one byte check 1 time in 256, which then fails the
-            // CRC: none of these four does, and the message must not blame the archive
+            // CRC: none of the three wrong ones here does. The empty password is refused for
+            // another reason, because an empty password is no password at all, which
+            // `refuses_an_empty_password_like_no_password` is about. Either way the message
+            // must not blame the archive
             assert!(matches!(error, OmexError::Refused(_)), "{name}: {error}");
             assert!(error.to_string().contains("password"), "{error}");
         }

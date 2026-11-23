@@ -169,8 +169,10 @@ pub fn entry(archive: &mut Archive, location: &[u8]) -> Result<Vec<u8>, CallErro
 ///
 /// The request is the JSON of [`SetEntryRequest`] and the `len` content bytes behind it, with
 /// nothing in between: the header ends where its closing brace is, which is where the bytes
-/// start. An absent `format` is guessed from the suffix of the location and the first bytes of
-/// the content, as [`guess_format`] does it for the python host.
+/// start. An absent `format` is guessed with [`guess_format`], from the suffix of the location
+/// and the first bytes of the content. This guess is the wasm host's own: the `set_entry` of the
+/// python binding takes a format and guesses nothing, and a python caller which wants the same
+/// thing calls `guess_format(suffix, head)` itself, with the suffix it took from the location.
 ///
 /// # Errors
 ///

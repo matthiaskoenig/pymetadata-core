@@ -228,6 +228,11 @@ export class Runtime {
   /**
    * Remove a member and its entry.
    *
+   * A location the archive does not hold throws `not_found`, which is also what `.` and
+   * `./manifest.xml` are, since a COMBINE archive keeps those two; the python package answers
+   * `False` for the same calls. A page which does not care whether there was an entry catches
+   * that kind.
+   *
    * @param {string} location The location in the manifest.
    */
   removeEntry(location) {
