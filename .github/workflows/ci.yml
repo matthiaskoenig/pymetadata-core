@@ -1,0 +1,175 @@
+# The gates of the repository, the commands of `README.md#checks`. Every job is a required status
+# check of `.github/rulesets/develop.json`, under the name it has here, so a job renamed or removed
+# is a ruleset to change in the same pull request.
+#
+# Deliberately minimal, as `pymetadata` is: one operating system, one python, and every action
+# pinned to an exact version, which `dependabot.yml` keeps current.
+name: ci
+
+on:
+  push:
+    # feature branches are checked through their pull request
+    branches: [develop]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    name: checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install the toolchain of rust-toolchain.toml
+        run: rustup show active-toolchain || rustup toolchain install
+      - uses: Swatinem/rust-cache@v2.9.3
+      - run: cargo fmt --check
+      # --locked, so that the committed Cargo.lock is what is checked and a resolver change is a
+      # failure here and not a silent difference
+      - run: cargo clippy --locked --all-targets -- -D warnings
+      # the release module comes before `cargo test`: `crates/wasm/tests/imports.rs` reads the
+      # built module and fails, rather than skips, when it is missing or older than a source, a
+      # manifest, the lock or the toolchain file. `cargo test` builds no other target by itself
+      - run: cargo build -p pymetadata-wasm --release --locked --target wasm32-unknown-unknown
+      - run: cargo test --locked
+      # a broken link, a link to a private item or a missing doc comment is a failure here too
+      - run: RUSTDOCFLAGS="-D warnings" cargo doc --locked --no-deps
+
+  wasm:
+    name: wasm
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      # rust-toolchain.toml pins both wasm targets, which rustup installs with the toolchain
+      - name: Install the toolchain of rust-toolchain.toml
+        run: rustup show active-toolchain || rustup toolchain install
+      - uses: Swatinem/rust-cache@v2.9.3
+      # `pymetadata-python` is excluded by name: pyo3 does not build for wasm, and a wasm host
+      # does not go through python. No crate has a default feature, so there is no
+      # `--no-default-features` configuration which differs from these two lines
+      - run: cargo check --locked --workspace --exclude pymetadata-python --target wasm32-unknown-unknown
+      - run: cargo check --locked --workspace --exclude pymetadata-python --target wasm32-wasip1
+
+  js:
+    name: js
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install the toolchain of rust-toolchain.toml
+        run: rustup show active-toolchain || rustup toolchain install
+      - uses: Swatinem/rust-cache@v2.9.3
+      - uses: actions/setup-node@v7.1.0
+        with:
+          node-version: "24"
+      # the module the npm package carries is built and not committed. The rust test of the host
+      # reads it, and fails when it is missing
+      - run: cargo build -p pymetadata-wasm --release --locked --target wasm32-unknown-unknown
+      - run: cargo test -p pymetadata-wasm --locked
+      - run: cargo clippy -p pymetadata-wasm --all-targets --locked -- -D warnings
+      # builds the module into the gitignored `js/runtime/` and copies the test fixture, so it
+      # comes before the tests. The panic test of the suite builds a second module with the
+      # `panic-probe` feature, which is why this job has cargo and the wasm target as well
+      - run: node js/build.mjs
+      # no `npm ci`: the package has no dependency at all
+      - run: npm test
+        working-directory: js
+      # the version check and the license copy of the publish, which `npm pack` runs as `prepack`
+      # too; named here so a failure says which of them it was
+      - run: node prepack.mjs
+        working-directory: js
+      # what the tarball would carry, the one thing about a publish which cannot be taken back
+      - run: npm pack --dry-run
+        working-directory: js
+
+  python:
+    name: python
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install the toolchain of rust-toolchain.toml
+        run: rustup show active-toolchain || rustup toolchain install
+      - uses: Swatinem/rust-cache@v2.9.3
+      # `pymetadata-python` is no default member, so the cargo commands of `checks` build none of
+      # it and these are the only gates it has. The runner image ships an older `python3` than
+      # the one the development environment wants, so uv is told which interpreter to take
+      - uses: astral-sh/setup-uv@v10.3.3
+      - uses: actions/setup-python@v7.1.0
+        with:
+          python-version: "3.13"
+      - run: cargo clippy -p pymetadata-python --locked --all-targets -- -D warnings
+      - run: cargo test -p pymetadata-python --locked
+      # the development environment of `uv.lock`: builds the extension into it and installs
+      # pytest and the `pymetadata` the tests cross-check against. It fails when the lock no
+      # longer matches pyproject.toml
+      - run: uv sync --locked
+      - run: uv run --no-sync pytest python/tests -q
+      # the wheel which ships is another artifact than the editable build above: it is tagged
+      # abi3, takes the extension-module feature and is assembled by maturin from the locked
+      # sources, so it is installed over the development build and tested as installed.
+      # `--no-sync` keeps `uv run` from rebuilding the package into the environment
+      - run: uv run --no-sync --with 'maturin>=1.16,<2' maturin build --release --locked -o dist
+      - run: uv pip install --force-reinstall dist/*.whl
+      - run: uv run --no-sync pytest python/tests -q
+      # the source distribution of the release. maturin proves it by building a wheel from it,
+      # so a file the build needs and the sdist lacks fails here and not at every source install
+      # after the release. It is a command of its own because the workspace of the sdist is not
+      # the one `Cargo.lock` was resolved for, so cargo has to rewrite the lock and `--locked`
+      # cannot be passed
+      - run: uv run --no-sync --with 'maturin>=1.16,<2' maturin build --release --sdist -o target/sdist
+
+  ruff:
+    name: ruff
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      # the ruff version is read from `uv.lock`, the file `uv run ruff` uses locally, and not from
+      # a bound which would resolve to the latest release
+      - uses: astral-sh/ruff-action@v4.1.0
+        with:
+          version-file: uv.lock
+          args: check --output-format=github
+      - uses: astral-sh/ruff-action@v4.1.0
+        with:
+          version-file: uv.lock
+          args: format --check --diff
+
+  ty:
+    name: ty
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install the toolchain of rust-toolchain.toml
+        run: rustup show active-toolchain || rustup toolchain install
+      - uses: Swatinem/rust-cache@v2.9.3
+      - uses: astral-sh/setup-uv@v10.3.3
+      - uses: actions/setup-python@v7.1.0
+        with:
+          python-version: "3.13"
+      # ty resolves the imports of the tests and scripts (`pymetadata`, `pytest`) from the
+      # development environment, which `uv sync` builds, extension included
+      - run: uv sync --locked
+      - run: uvx ty@0.0.108 check

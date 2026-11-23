@@ -1,0 +1,27 @@
+{
+  "name": "@matthiaskoenig/pymetadata-core",
+  "version": "0.1.0",
+  "description": "Read and write COMBINE archives (OMEX) in the browser with a WebAssembly module, no server and no dependency",
+  "license": "MIT",
+  "author": "Matthias König",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/matthiaskoenig/pymetadata-core.git",
+    "directory": "js"
+  },
+  "keywords": ["combine", "omex", "sbml", "sedml", "wasm"],
+  "type": "module",
+  "engines": { "node": ">=20" },
+  "exports": {
+    ".": "./loader.mjs",
+    "./pymetadata-core.wasm": "./runtime/pymetadata-core.wasm"
+  },
+  "files": ["loader.mjs", "runtime/pymetadata-core.wasm", "LICENSE", "README.md"],
+  "scripts": {
+    "build": "node build.mjs",
+    "check": "node build.mjs --check",
+    "test": "node --test test/*.test.mjs",
+    "prepack": "node prepack.mjs"
+  },
+  "publishConfig": { "access": "public", "provenance": true }
+}

@@ -4,3 +4,10 @@ js/runtime/
 js/node_modules/
 .superpowers/
 dist/
+.venv/
+.pytest_cache/
+.ruff_cache/
+# the compiled extension maturin drops next to the python sources
+python/pymetadata_core/*.so
+python/pymetadata_core/*.pyd
+python/pymetadata_core/*.dylib

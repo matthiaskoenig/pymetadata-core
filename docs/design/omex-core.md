@@ -1,22 +1,27 @@
 # pymetadata-core: the OMEX archive in Rust
 
-**Status:** accepted, not implemented. Issue
+**Status:** implemented in 0.1.0. Issue
 [pymetadata#99](https://github.com/matthiaskoenig/pymetadata/issues/99).
 **Date:** 2026-11-23.
-**Evidence:** `spike/RESULTS.md`.
+**Evidence:** `BENCHMARKS.md`, the numbers of the implementation;
+`spike/RESULTS.md`, the measurements this design was accepted on.
 
 ## Why
 
 `pymetadata.omex` is used wherever a COMBINE archive is read or written, in
-pipelines and in frontends. Two numbers from the spike decide the design
-(1.4 MB archive, 8 entries):
+pipelines and in frontends. Two measured results decide the design
+(`BENCHMARKS.md`, 1.4 MB archive, fastest of 5 runs on a shared machine):
 
-- `Omex.to_omex` costs 234 ms, because python re-deflates every entry on
+- `Omex.to_omex` costs 230 ms, because python re-deflates every entry on
   every write. A Rust writer which copies the untouched entries as
-  still-compressed blobs costs 0.12 ms.
-- Reading only `manifest.xml` costs 155 microseconds in python and 14 in
-  Rust, and listing the contents of an archive is the request a frontend
-  makes most.
+  still-compressed blobs costs 0.15 ms, including opening the archive
+  (1520x). When both sides deflate every entry the core is 1.6x to 2.0x
+  faster, so the gain is the copy and not the deflate.
+- Reading only `manifest.xml` costs 197 microseconds in python and 78 in
+  Rust through `Archive::from_bytes`, which copies its input (2.5x). A
+  floor of 12 microseconds (17x) skips the copy and the pass which adds the
+  members the manifest does not list; it is not an API call. Listing the
+  contents of an archive is the request a frontend makes most.
 
 A browser has no python at all, so the same core has to run as WebAssembly.
 
@@ -95,6 +100,9 @@ lookup milestone needs one.
 
 `crates/core/src`, one responsibility per module:
 
+- `zip/spec.rs`: the constants of the format, declared once for the reader and
+  the writer, so that the two cannot drift apart over a signature, a method, a
+  flag bit or a sentinel.
 - `zip/eocd.rs`, `zip/central.rs`, `zip/local.rs`: the container records.
 - `zip/reader.rs`: the lazy reader, member lookup, raw and inflated bytes.
 - `zip/writer.rs`: the writer, `stored`, `deflate` and raw copy.
@@ -125,7 +133,7 @@ impl Archive {
     pub fn entry(&self, location: &str) -> Option<&Entry>;
     pub fn entry_bytes(&mut self, location: &str) -> Result<&[u8], OmexError>;
     pub fn set_entry(&mut self, entry: Entry, bytes: Vec<u8>) -> Result<(), OmexError>;
-    pub fn remove_entry(&mut self, location: &str) -> Option<Entry>;
+    pub fn remove_entry(&mut self, location: &str) -> Result<Option<Entry>, OmexError>;
     pub fn to_bytes(&mut self) -> Result<Vec<u8>, OmexError>;
     pub fn to_bytes_recompressed(&mut self, level: u32) -> Result<Vec<u8>, OmexError>;
 }
@@ -157,8 +165,9 @@ Invariants the core keeps, all of them the ones `pymetadata` keeps today:
   archive itself.
 - The manifest always holds `.` with the OMEX format URI and `./manifest.xml`
   with the manifest format URI.
-- An entry outside the archive (`../`), an absolute location and a location
-  which is not in the zip are errors, not silently dropped files.
+- An entry outside the archive (`../`) and an absolute location are errors, not
+  silently dropped files, and they are errors of every call which takes a
+  location: `entry_bytes`, `set_entry` and `remove_entry` alike.
 - A location present in the zip but absent from the manifest is kept and
   listed; this is what real archives from BioModels look like.
 
@@ -181,12 +190,15 @@ class Archive:
     @staticmethod
     def from_bytes(data: bytes, password: bytes | None = None) -> Archive: ...
     @property
-    def entries(self) -> list[tuple[str, str, bool]]: ...   # location, format, master
+    def entries(self) -> list[tuple[str, str, bool]]: ...  # location, format, master
     def manifest_xml(self) -> str: ...
     def entry_bytes(self, location: str) -> bytes: ...
-    def set_entry(self, location: str, format: str, master: bool, data: bytes) -> None: ...
+    def set_entry(
+        self, location: str, format: str, master: bool, data: bytes
+    ) -> None: ...
     def remove_entry(self, location: str) -> bool: ...
     def to_bytes(self, recompress: bool = False, level: int = 9) -> bytes: ...
+
 
 def normalize_location(location: str) -> str: ...
 def guess_format(suffix: str, head: bytes = b"") -> str: ...
@@ -195,6 +207,12 @@ def lookup_format(format_key: str) -> str: ...
 
 Errors from the core are raised as `pymetadata_core.OmexError`, a subclass of
 `ValueError`, so a caller which catches `ValueError` today keeps working.
+
+Opening, inflating an entry, `set_entry` and writing run without the GIL, so
+another thread can work while a large archive is written. An `Archive` is in use by one call at
+a time: a second thread which uses it meanwhile gets
+`pymetadata_core.ArchiveBusyError` (a `RuntimeError`) saying so, and the rule is
+one `Archive` per thread.
 
 What `pymetadata` does with it (the contract, implemented in that repository):
 `pymetadata.omex.Omex` keeps its public API unchanged, which is
@@ -208,6 +226,27 @@ is asked for into the temporary directory on first ask, and `to_omex` calls
 `Archive.to_bytes`. `pymetadata` gains a runtime dependency on
 `pymetadata-core` and stops being a pure-python wheel. `tests/test_omex.py`
 is the acceptance gate for the swap and does not change.
+
+### Differences from pymetadata
+
+The core keeps what an archive says, where `pymetadata` rewrites it on the way
+through its temporary directory. The hard swap changes these observable
+behaviors, so `tests/test_omex.py` of `pymetadata` has to be updated for them,
+and none of them is a regression of the core. Found by the cross-checks of
+`python/tests/test_roundtrip.py` against `pymetadata` 0.8.3 on
+`iCGB21FR.omex`.
+
+- A manifest entry without a zip member (`./iCGB21FR_memote.html`, where the zip
+  holds `iCGB21_memote.html`): the core keeps it as an entry without bytes,
+  `pymetadata` drops it, as its manifest is built from the extracted files.
+- Files the manifest does not list: the core keeps them in the order of the zip,
+  `pymetadata` sorts them by location, after the listed entries.
+- The format of `.` and `./manifest.xml`: the core keeps the one the file
+  declares (`https://identifiers.org/...` in that archive), `pymetadata` always
+  writes its own default (`http://identifiers.org/...`).
+- Threads: an `Archive` shared between threads can raise `ArchiveBusyError` while
+  another thread inflates an entry, sets an entry or writes it, where pure python `pymetadata`
+  never did. One `Archive` per thread avoids it.
 
 ### The wasm host
 
@@ -224,6 +263,7 @@ the payload in the output buffer:
 omex_alloc(len) -> *mut u8
 omex_output_ptr() -> *const u8
 omex_output_len() -> usize
+omex_new() -> i32               // an empty archive, as `Archive()` in python
 omex_open() -> i32              // parse the input buffer as an archive
 omex_manifest() -> i32          // JSON: the entries
 omex_entry(ptr, len) -> i32     // the inflated bytes of one location
@@ -233,8 +273,52 @@ omex_write(recompress) -> i32   // the archive bytes
 omex_about() -> i32             // JSON: version, backend
 ```
 
-Error codes mirror the sibling: `malformed`, `refused`, `internal`, `panic`,
-and the panic hook writes its message into the output buffer before the trap.
+Error codes mirror the sibling. The core produces four, the kind strings of
+`wire::kind`: `malformed`, `refused`, `unsupported` and `not_found`, one per
+variant of `OmexError`. Two more are host-level and the core never returns
+them: `internal`, which the wasm host raises for a failure outside of the core
+(a request before `omex_new` or `omex_open`, or a pointer and a length which
+are not a range of the input buffer, which is where `omex_alloc` is and the
+only place a request is read from), and `panic`, which its panic hook raises,
+writing the message into the output buffer before the trap.
+
+Two limitations of 0.1.0, both of them of the export list above and not of the
+core. `omex_open` takes no password, so a ZipCrypto protected archive cannot be
+opened in the browser, where the python host opens it with
+`Archive.from_bytes(data, password)`. And the host sets no budget of its own, so
+the browser inherits the 1 GiB inflate cap of `zip::MAX_INFLATED_SIZE`: a member
+which declares more is `refused`, with its size and the limit in the message,
+while a member under the cap which the instance cannot allocate aborts, and an
+abort on `wasm32` traps. A page sees that trap as a `RuntimeError` with no
+message of its own, the output buffer still holds whatever the call before it
+wrote, and the instance is spent: the loader instantiates a new one rather than
+calling into it again.
+
+Four more differences between the two hosts, all of them of the export list and
+none of them of the core, which `js/README.md` states for a page as well:
+
+- `omex_set_entry` guesses an absent `format` from the suffix of the location
+  and the first bytes of the content, where the python `set_entry` takes one.
+  Python exposes the guess as `guess_format(suffix, head)`, so a python caller
+  takes the suffix of the location itself.
+- There is no export for the bytes of `manifest.xml`: they are written from the
+  entries, so `omex_manifest` is how a page reads the manifest, where python
+  also has `manifest_xml()`.
+- `normalize_location` and `lookup_format` are python-only. A page which needs
+  a format URI by name carries the table itself.
+- `omex_remove_entry` answers `not_found` for an entry which was not there,
+  where `Archive.remove_entry` answers `False`. A location outside of the
+  archive is `refused` by both, and by every other call which takes one.
+
+The cargo feature `panic-probe`, off by default, adds an export which panics
+on purpose. `js/test/loader.test.mjs` builds the module with it into its own
+target directory to prove, in a real engine, that the hook's sentence is what
+the loader reads after the trap; the default module exports exactly the eleven
+names above and the memory their output is read in, twelve in all, which
+`crates/wasm/tests/imports.rs` and the same test assert. The loader reports a
+trap which left no message as the kind `trap` and every call after a trap as
+`spent`; those two kinds are the loader's own, the core and the wasm host never
+produce them.
 
 `js/` ships `loader.mjs` with no dependency and no Node API, so it runs in a
 browser, a Web Worker and Node. `js/build.mjs` builds the module, copies it
@@ -246,12 +330,13 @@ and sharding it over workers has no meaning.
 ## Benchmarks
 
 Not a gate, as in the siblings. `crates/core/examples/omex_timing.rs` times
-the six archives of `pymetadata/tests/data/omex/` with the protocol of the
+the four archives of `pymetadata/tests/data/omex/` with the protocol of the
 spike (3 warm-up calls, 3 rounds of 20 calls, median of the round medians,
-a checksum per cell), `scripts/python_timing.py` repeats it against the
-installed `pymetadata`, and `BENCHMARKS.md` holds the comparison with the
-spike numbers as its first row. `bench/RESULTS.md` holds the node and Chrome
-table, produced by `node js/bench.mjs` and `js/bench.html`.
+a checksum per cell, then the fastest of 5 runs), `scripts/python_timing.py`
+repeats it against the installed `pymetadata`, and `BENCHMARKS.md` holds the
+comparison and the section against the spike numbers. `bench/RESULTS.md`
+holds the node and Chrome table, produced by `node js/bench.mjs` and
+`js/bench.html`.
 
 ## Repository conventions
 
@@ -271,8 +356,14 @@ Continuous integration, `.github/workflows/ci.yml`, with actions pinned to
 exact versions:
 
 - `checks`: `cargo fmt --check`, `clippy --locked --all-targets -D warnings`,
+  `cargo build -p pymetadata-wasm --release --locked --target
+  wasm32-unknown-unknown`,
   `cargo test --locked`, `RUSTDOCFLAGS="-D warnings" cargo doc --locked
-  --no-deps`.
+  --no-deps`. The release build of the module comes before the tests because
+  `crates/wasm/tests/imports.rs` reads it and fails when it is missing or older
+  than a source, a manifest or the lock, rather than skipping: a `cargo test`
+  which never saw the module is no answer about its imports, and `cargo test`
+  does not build another target by itself.
 - `wasm`: `cargo check --locked --workspace --exclude pymetadata-python` for
   `wasm32-unknown-unknown` and `wasm32-wasip1`, with and without default
   features.
@@ -290,10 +381,23 @@ publishes to PyPI with trusted publishing from the `pypi` environment on a
 release with the release-notes file as its body. Nothing goes to crates.io
 in 0.1.0.
 
+## Follow-ups
+
+- **Move the input instead of copying it (lookup milestone).** `Archive::from_bytes`
+  takes `&[u8]` and copies it into the zip reader, which owns a `Vec`, and the
+  wasm host stages the request in its own buffer and releases it after
+  `omex_open`, so an archive is copied once more than it needs to be. The copy
+  is 0.047 ms of the 0.078 ms of the manifest-only call on the 1.4 MB archive
+  (`BENCHMARKS.md`); the other 0.019 ms of the 0.066 ms gap to `manifest_owned`
+  is the pass which adds the unlisted members, which stays. An
+  `Archive::from_vec` which takes the staged `Vec`, used by the host, would
+  reach about 0.031 ms, roughly 6x against python's 0.197 ms, and not the
+  0.012 ms of the floor. It belongs with the host and its own review, and is not done.
+
 ## Risks
 
 - **Hand-rolled zip.** The container is the one piece where a bug corrupts a
-  user's archive. Mitigation: the six real archives of
+  user's archive. Mitigation: the four real archives of
   `pymetadata/tests/data/omex/` are the fixture corpus, every write is read
   back by python's `zipfile` in a test, and `zipfile`'s own output is read by
   the core in the same test, so both directions are pinned against the

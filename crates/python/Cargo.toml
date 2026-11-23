@@ -1,0 +1,31 @@
+[package]
+name = "pymetadata-python"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "The python bindings of pymetadata-core"
+repository.workspace = true
+readme = "../../python/README.md"
+# built by maturin into the python wheel `pymetadata-core`, not published as a crate
+publish = false
+
+[lib]
+# not `pymetadata_core`: that is the lib name of the core, and two crates of one name collide in
+# `cargo doc` and in the doctests, where rustc finds two rlibs. The module name is set by maturin
+# (`module-name = "pymetadata_core._core"`) and by `#[pymodule] fn _core`.
+name = "_core"
+crate-type = ["cdylib", "rlib"]
+
+[features]
+# maturin turns this on for the wheel: an extension module must not link libpython. A plain
+# `cargo test` and `cargo clippy` of the crate leave it off, so they link against the interpreter.
+extension-module = ["pyo3/extension-module"]
+
+[dependencies]
+pymetadata-core = { path = "../core", version = "0.1.0" }
+pyo3.workspace = true
+
+[lints]
+workspace = true

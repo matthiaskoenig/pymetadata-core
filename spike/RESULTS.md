@@ -1,5 +1,15 @@
 # First spike: what a Rust OMEX core is worth
 
+> Historical record. It measured a narrower scope than `../BENCHMARKS.md`: no
+> copy of the input by `Archive::from_bytes`, no unlisted members, python
+> `zipfile` at its default level 6 (the level `to_omex` does not use), a single run per
+> cell. `../BENCHMARKS.md` supersedes the figures of the manifest
+> (11x, now 2.5x through `from_bytes`, with a 17x floor which skips the copy and the
+> unlisted-members pass and is not an API call), of the raw
+> copy write (about 1950x, now 1520x) and of the full recompress at the level
+> `to_omex` uses (level 9: 1.8x to 2.0x), and the machine section of this file
+> for the python version.
+
 This package is throwaway. It exists to answer three questions with numbers
 before the real crates are laid out, in the way the first spike of
 `pkpdutils-core` did:

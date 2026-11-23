@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<omexManifest xmlns="http://identifiers.org/combine.specifications/omex-manifest">
+	<content location="BIOMD0000000001.pdf" format="http://purl.org/NET/mediatypes/application/pdf" master="false"/>
+	<content location="BIOMD0000000001_manual.png" format="http://purl.org/NET/mediatypes/image/png" master="false"/>
+	<content location="BIOMD0000000001_url.xml" format="http://identifiers.org/combine.specifications/sbml.level-2.version-4" master="true"/>
+	<content location="BIOMD0000000001.sci" format="http://purl.org/NET/mediatypes/application/x-scilab" master="false"/>
+	<content location="BIOMD0000000001.xpp" format="http://purl.org/NET/mediatypes/application/x.unknown" master="false"/>
+	<content location="BIOMD0000000001.m" format="http://purl.org/NET/mediatypes/application/x.unknown" master="false"/>
+	<content location="BIOMD0000000001-biopax3.owl" format="http://purl.org/NET/mediatypes/application/x.unknown" master="false"/>
+	<content location="BIOMD0000000001.svg" format="http://purl.org/NET/mediatypes/image/svg+xml" master="false"/>
+	<content location="BIOMD0000000001_urn.xml" format="http://identifiers.org/combine.specifications/sbml.level-2.version-4" master="false"/>
+	<content location="BIOMD0000000001.vcml" format="http://purl.org/NET/mediatypes/application/x.unknown" master="false"/>
+	<content location="BIOMD0000000001.png" format="http://purl.org/NET/mediatypes/image/png" master="false"/>
+	<content location="BIOMD0000000001-biopax2.owl" format="http://purl.org/NET/mediatypes/application/x.unknown" master="false"/>
+	<content location="BIOMD0000000001_manual.svg" format="http://purl.org/NET/mediatypes/image/svg+xml" master="false"/>
+</omexManifest>

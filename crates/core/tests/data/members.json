@@ -1,0 +1,514 @@
+{
+  "BIOMD0000000001.omex": [
+    {
+      "crc32": 413308854,
+      "method": 8,
+      "name": "manifest.xml",
+      "sha256": "b4c7f69a46d1a1fdb18dccc767fb9d027e0dc83e2042d1d9f05bb4dfb3f25afa",
+      "size": 1719
+    },
+    {
+      "crc32": 3258256813,
+      "method": 8,
+      "name": "metadata.rdf",
+      "sha256": "a9872b3d48b054dedd1c859bc75d9d3ea8489143b3e8aa00b286cdeda73a9244",
+      "size": 628
+    },
+    {
+      "crc32": 2893041578,
+      "method": 8,
+      "name": "BIOMD0000000001_manual.svg",
+      "sha256": "40e584ef12ab17375cfa64d78a7b4c2277c9dab242431524e3ca5eea3542a646",
+      "size": 38149
+    },
+    {
+      "crc32": 1061056160,
+      "method": 8,
+      "name": "BIOMD0000000001.png",
+      "sha256": "301d98ca01cbe470099d3c00b071f9e10e908281bb9ce83d6a09e47784716745",
+      "size": 48468
+    },
+    {
+      "crc32": 2247369083,
+      "method": 8,
+      "name": "BIOMD0000000001.sci",
+      "sha256": "474950acbf93371b3a4b75d952fe0f751f32d1d8800581fb140a45f60535289a",
+      "size": 67
+    },
+    {
+      "crc32": 4026320264,
+      "method": 8,
+      "name": "BIOMD0000000001.vcml",
+      "sha256": "611eee301da2accfc0a7ffdda8597d18241ca647fd74f0cafc520af609eaa36f",
+      "size": 67027
+    },
+    {
+      "crc32": 1893186296,
+      "method": 8,
+      "name": "BIOMD0000000001.m",
+      "sha256": "3ac8894a9d540e74f30f5dfdd0b026f1d2249c3599f2e20885ccb7892c9fc3eb",
+      "size": 9086
+    },
+    {
+      "crc32": 2893041578,
+      "method": 8,
+      "name": "BIOMD0000000001.svg",
+      "sha256": "40e584ef12ab17375cfa64d78a7b4c2277c9dab242431524e3ca5eea3542a646",
+      "size": 38149
+    },
+    {
+      "crc32": 4286821618,
+      "method": 8,
+      "name": "BIOMD0000000001.pdf",
+      "sha256": "010549212000ed320e3a4a74d28d1ec5426e4ab84c7a62ca5e12e09387e9fc07",
+      "size": 225038
+    },
+    {
+      "crc32": 3132267745,
+      "method": 8,
+      "name": "BIOMD0000000001-biopax2.owl",
+      "sha256": "5ef702cd4899f4359791ae429783761f9f2bee1a252f847684087773f607f911",
+      "size": 23635
+    },
+    {
+      "crc32": 1061056160,
+      "method": 8,
+      "name": "BIOMD0000000001_manual.png",
+      "sha256": "301d98ca01cbe470099d3c00b071f9e10e908281bb9ce83d6a09e47784716745",
+      "size": 48468
+    },
+    {
+      "crc32": 1029290981,
+      "method": 8,
+      "name": "BIOMD0000000001_url.xml",
+      "sha256": "f550cd60963d60bf4345d1a5ff4cc43ebb54c6dc451bfc35caa16edefdacd47b",
+      "size": 52802
+    },
+    {
+      "crc32": 962166147,
+      "method": 8,
+      "name": "BIOMD0000000001_urn.xml",
+      "sha256": "bee5a0983a7f849a87d14494f949c416249619419c60e826618157fc578111d0",
+      "size": 50432
+    },
+    {
+      "crc32": 2989274077,
+      "method": 8,
+      "name": "BIOMD0000000001.xpp",
+      "sha256": "95b395144a78ed0bcb0a102fe06d2309163dfe301ebb7e1301e98683e2603499",
+      "size": 6086
+    },
+    {
+      "crc32": 547469430,
+      "method": 8,
+      "name": "BIOMD0000000001-biopax3.owl",
+      "sha256": "dc74d454ade750237e44cdc5f197fe1cb92300a123fcdbbfd0c32a8900b9c1a0",
+      "size": 37681
+    }
+  ],
+  "CombineArchiveShowCase.omex": [
+    {
+      "crc32": 2135358079,
+      "method": 8,
+      "name": "README.md",
+      "sha256": "89b6c014a6451d906f05fddbba8b1d6c2a232032017fbb1c3e31a6aed4297887",
+      "size": 2159
+    },
+    {
+      "crc32": 0,
+      "method": 0,
+      "name": "documentation/",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size": 0
+    },
+    {
+      "crc32": 4292659540,
+      "method": 8,
+      "name": "documentation/Calzone2007-supplementary-material.pdf",
+      "sha256": "e59a9f4f6902a4c92de6ac331af25507e58c17ea4b74cf839ee20f459926f850",
+      "size": 140843
+    },
+    {
+      "crc32": 3480183502,
+      "method": 8,
+      "name": "documentation/Calzone2007.pdf",
+      "sha256": "3a5a3e00658f91aa329e73975e7a507f3408bba23e3232d0d42917894eb69cf6",
+      "size": 325460
+    },
+    {
+      "crc32": 0,
+      "method": 0,
+      "name": "experiment/",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size": 0
+    },
+    {
+      "crc32": 1354648440,
+      "method": 8,
+      "name": "experiment/Calzone2007-default-simulation.xml",
+      "sha256": "850680b2d70bdad5cb1917309f3c9fbca1dc64ea825eff0b539df2832753b710",
+      "size": 42853
+    },
+    {
+      "crc32": 1723603802,
+      "method": 8,
+      "name": "experiment/Calzone2007-simulation-figure-1B.xml",
+      "sha256": "7cb586bd0e0cc841f680ab081a78d59b5f92d50343f2216c228fbd980144f889",
+      "size": 4584
+    },
+    {
+      "crc32": 1365644133,
+      "method": 8,
+      "name": "manifest.xml",
+      "sha256": "90a30b5bd7af162281bb1cac7ff27acdf72abd49f729c3f8f12fb33fa5aa6b22",
+      "size": 2678
+    },
+    {
+      "crc32": 689574491,
+      "method": 8,
+      "name": "metadata.rdf",
+      "sha256": "ca4660dc28c8619c2ef3a2fcbdb8f71018a6f1a0602ce2e54bda6ddc067d550e",
+      "size": 34067
+    },
+    {
+      "crc32": 0,
+      "method": 0,
+      "name": "model/",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size": 0
+    },
+    {
+      "crc32": 1307546189,
+      "method": 8,
+      "name": "model/BIOMD0000000144.xml",
+      "sha256": "12e90ed07a941a3596d6a957198deb4ba0a18c80ccebbe4b079b3bfa89956e2c",
+      "size": 117090
+    },
+    {
+      "crc32": 3046205834,
+      "method": 8,
+      "name": "model/calzone_2007.ai",
+      "sha256": "df1de1100bd496666ab005098e560ede66cfd895ad4ac772cddd1342c42658ba",
+      "size": 323247
+    },
+    {
+      "crc32": 1783241611,
+      "method": 8,
+      "name": "model/calzone_2007.png",
+      "sha256": "7f908f9d9e3f53cce21c529bf1aee4ce060536c1229f6efe9a155ce4c369d08e",
+      "size": 133606
+    },
+    {
+      "crc32": 3717412886,
+      "method": 8,
+      "name": "model/calzone_2007.svg",
+      "sha256": "81187d247c01608fe5d5b311d34690bbb8014c9aba1e38a2c94a7d18ccfaac51",
+      "size": 329887
+    },
+    {
+      "crc32": 3746088482,
+      "method": 8,
+      "name": "model/calzone_thieffry_tyson_novak_2007.cellml",
+      "sha256": "5403522de235d2e1646140653d0e17d625163ab7c75542aed10a80ef51f5fa37",
+      "size": 91698
+    },
+    {
+      "crc32": 0,
+      "method": 0,
+      "name": "model/sbgn/",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size": 0
+    },
+    {
+      "crc32": 2160492525,
+      "method": 8,
+      "name": "model/sbgn/Calzone2007.gml",
+      "sha256": "d2b242c6b312bfc4a4a1be60ec835040b1932d71a7de0ba39107abc5941d9736",
+      "size": 74203
+    },
+    {
+      "crc32": 265395390,
+      "method": 8,
+      "name": "model/sbgn/Calzone2007.graphml",
+      "sha256": "5fbefec8d33083fac5a821d8edd6cb2ee7251a9a0fa22911728037665f3b6a36",
+      "size": 127861
+    },
+    {
+      "crc32": 1359826256,
+      "method": 8,
+      "name": "model/sbgn/Calzone2007.pdf",
+      "sha256": "4e93d159a31bb6a1bfb9eddb7b1463df27ae07ec9910fb945a265eb1874d43c0",
+      "size": 156718
+    },
+    {
+      "crc32": 388921461,
+      "method": 8,
+      "name": "model/sbgn/Calzone2007.png",
+      "sha256": "8adf877d47258ea5f8aa0a0d381cc8c9c021bf392c11dabd636e88e7d8b4ab35",
+      "size": 100613
+    },
+    {
+      "crc32": 318647522,
+      "method": 8,
+      "name": "model/sbgn/Calzone2007.sbgn",
+      "sha256": "0af891a27a278089a1319c9fa9aa0aa5bb81fe9db48668a29a116fcbe1c253b3",
+      "size": 30435
+    },
+    {
+      "crc32": 0,
+      "method": 0,
+      "name": "result/",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size": 0
+    },
+    {
+      "crc32": 674592826,
+      "method": 8,
+      "name": "result/Fig1B-bottom-COPASI.svg",
+      "sha256": "f137112446bcb54972574955d1ae3bef78213a6abfac9a805ac6b198be21d61b",
+      "size": 57152
+    },
+    {
+      "crc32": 1116161335,
+      "method": 8,
+      "name": "result/Fig1B-bottom-webtools.png",
+      "sha256": "0555f813a651e4ff8dfdf9346173a12e7b2277cf760ad248ebd72d099007a45f",
+      "size": 42476
+    },
+    {
+      "crc32": 4019304607,
+      "method": 8,
+      "name": "result/Fig1B-top-COPASI.svg",
+      "sha256": "a8a5505ac78c815c2b1851c0b8236e5a642927ad87f4e04ac1912553adcad1e2",
+      "size": 67191
+    },
+    {
+      "crc32": 2334276478,
+      "method": 8,
+      "name": "result/Fig1B-top-webtools.png",
+      "sha256": "97db4930bfca4cef0c81525f1b7e691fdbc5cdcb9fd2a937f483aecdeb5a5d25",
+      "size": 17101
+    }
+  ],
+  "CompModels.omex": [
+    {
+      "crc32": 0,
+      "method": 0,
+      "name": "models/",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size": 0
+    },
+    {
+      "crc32": 911766555,
+      "method": 8,
+      "name": "models/omex_comp.xml",
+      "sha256": "0bcce827b3b602213be4994f3a89f02c380243da409ba77b7ab73d999668b221",
+      "size": 8447
+    },
+    {
+      "crc32": 235049945,
+      "method": 8,
+      "name": "models/omex_minimal.xml",
+      "sha256": "afa14380cbb8ac45d1d87fc42b24254a1e09922b07d58bb6725564a8a6ab3ce2",
+      "size": 6619
+    },
+    {
+      "crc32": 4207087285,
+      "method": 8,
+      "name": "models/omex_comp_flat.xml",
+      "sha256": "ddabdaab288fd3b42217b9d55708284a4d7dffc798c836f420744c1ae5748b54",
+      "size": 9658
+    },
+    {
+      "crc32": 2424163592,
+      "method": 8,
+      "name": "manifest.xml",
+      "sha256": "798cb790ab72ce1baa3dee13865ce322cb2c055709ad1d85267b5b378c25ec6e",
+      "size": 812
+    },
+    {
+      "crc32": 3823626956,
+      "method": 8,
+      "name": "README.md",
+      "sha256": "922e60900181d2971f0eba2255a9811b7a82dc1b31c2cc124df1d5c722f40437",
+      "size": 103
+    }
+  ],
+  "iCGB21FR.omex": [
+    {
+      "crc32": 62613869,
+      "method": 8,
+      "name": "manifest.xml",
+      "sha256": "870967e507b30d4a6e26555ac669dcc8a8bec76a68e113a84a7d6caef27a0526",
+      "size": 1104
+    },
+    {
+      "crc32": 2604431114,
+      "method": 8,
+      "name": "__MACOSX/._manifest.xml",
+      "sha256": "3327521ccf8765e507dd66e97d400af661de811c0e47d3704c979b171b771f94",
+      "size": 176
+    },
+    {
+      "crc32": 783159375,
+      "method": 8,
+      "name": "iCGB21FR.xml",
+      "sha256": "0e92b450de71e640cf649be67e8ba38f3df02884e42ff7d6e760291819708439",
+      "size": 7063555
+    },
+    {
+      "crc32": 2862680553,
+      "method": 8,
+      "name": "__MACOSX/._iCGB21FR.xml",
+      "sha256": "641de366a605b5a5a83374a0927376073a22b2977042163bf6efac988fd5bff0",
+      "size": 176
+    },
+    {
+      "crc32": 615922242,
+      "method": 8,
+      "name": "metadata.rdf",
+      "sha256": "df67d8f536a9659b384f670dcbb8a909a1e9ef4d8320f29b0be2d77f72f0ae68",
+      "size": 3678
+    },
+    {
+      "crc32": 667157408,
+      "method": 8,
+      "name": "iCGB21_memote.html",
+      "sha256": "6c61bab6396b5530cb267b60058d9249673df9a50a9fc860fa6ded27b8358471",
+      "size": 4154859
+    },
+    {
+      "crc32": 2214470531,
+      "method": 8,
+      "name": "__MACOSX/._iCGB21_memote.html",
+      "sha256": "29195fcdc11a4845f676348642d7168ef33e5ef5cee1b75fefa28e400db13a34",
+      "size": 176
+    },
+    {
+      "crc32": 1445134643,
+      "method": 8,
+      "name": "iCGB21FR_map.sbgn",
+      "sha256": "5ab9d52e45e47917322fb065c39626f5ac905fa4c52c134c46bec9bfedc178d7",
+      "size": 102998
+    },
+    {
+      "crc32": 3400356548,
+      "method": 8,
+      "name": "iCGB21FR_map.json",
+      "sha256": "ea3ba4fbc94d7c4ac723c1e946e1d857111b336d395cb69afe3785bd058841d7",
+      "size": 88970
+    },
+    {
+      "crc32": 0,
+      "method": 0,
+      "name": "FROG/",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size": 0
+    },
+    {
+      "crc32": 2520780799,
+      "method": 8,
+      "name": "FROG/.DS_Store",
+      "sha256": "fafecd82b569eb864e8ea3e978a7fdb95f07c6498c37d02291f43d6572d46522",
+      "size": 6148
+    },
+    {
+      "crc32": 952141835,
+      "method": 8,
+      "name": "__MACOSX/FROG/._.DS_Store",
+      "sha256": "2f380f4a3d05a8d90c2106f50da75064e9ce57a598599dc5404f8f69a0223aa9",
+      "size": 120
+    },
+    {
+      "crc32": 0,
+      "method": 0,
+      "name": "FROG/cobrapy/",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size": 0
+    },
+    {
+      "crc32": 1733491657,
+      "method": 8,
+      "name": "FROG/iCGB21FR_FROG_Report.txt",
+      "sha256": "7cf54e1df135fd028831656c2bfa99a9cb729a8e174a89def9d88af1aba54320",
+      "size": 2675
+    },
+    {
+      "crc32": 0,
+      "method": 0,
+      "name": "FROG/cameo/",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size": 0
+    },
+    {
+      "crc32": 1073024990,
+      "method": 8,
+      "name": "FROG/cobrapy/02_fva.tsv",
+      "sha256": "58184085fdcdf6a6f76bb0d4e5a7ce17b19ff918d40633f2c825a1976fa0e71e",
+      "size": 76994
+    },
+    {
+      "crc32": 2103773593,
+      "method": 8,
+      "name": "FROG/cobrapy/metadata.json",
+      "sha256": "62d0dc3621e5a2160ed79b780a75c2f61909bd4539a45d91fe8b846136d6922d",
+      "size": 331
+    },
+    {
+      "crc32": 558243714,
+      "method": 8,
+      "name": "FROG/cobrapy/03_gene_deletion.tsv",
+      "sha256": "bed73ae7a83ef950206198910f2e53ac8f677c536c1129e74fc7eecf29878cac",
+      "size": 59749
+    },
+    {
+      "crc32": 2491058209,
+      "method": 8,
+      "name": "FROG/cobrapy/04_reaction_deletion.tsv",
+      "sha256": "95f8331698ea6dd862f75a00ee11af3fb4ce94b46bb509e273ec6ee35cd62aa4",
+      "size": 65250
+    },
+    {
+      "crc32": 1487249696,
+      "method": 8,
+      "name": "FROG/cobrapy/01_objective.tsv",
+      "sha256": "5c8835d38d3d8d251fb45a9b7e731bc33d59da56cfe6d58e2a3dd94496db0f36",
+      "size": 62
+    },
+    {
+      "crc32": 1073024990,
+      "method": 8,
+      "name": "FROG/cameo/02_fva.tsv",
+      "sha256": "58184085fdcdf6a6f76bb0d4e5a7ce17b19ff918d40633f2c825a1976fa0e71e",
+      "size": 76994
+    },
+    {
+      "crc32": 858313442,
+      "method": 8,
+      "name": "FROG/cameo/metadata.json",
+      "sha256": "70d820e7e0053b1d17a101e12cb3c3b425641525f035e403f25fd05f75f7bd85",
+      "size": 329
+    },
+    {
+      "crc32": 558243714,
+      "method": 8,
+      "name": "FROG/cameo/03_gene_deletion.tsv",
+      "sha256": "bed73ae7a83ef950206198910f2e53ac8f677c536c1129e74fc7eecf29878cac",
+      "size": 59749
+    },
+    {
+      "crc32": 2491058209,
+      "method": 8,
+      "name": "FROG/cameo/04_reaction_deletion.tsv",
+      "sha256": "95f8331698ea6dd862f75a00ee11af3fb4ce94b46bb509e273ec6ee35cd62aa4",
+      "size": 65250
+    },
+    {
+      "crc32": 1487249696,
+      "method": 8,
+      "name": "FROG/cameo/01_objective.tsv",
+      "sha256": "5c8835d38d3d8d251fb45a9b7e731bc33d59da56cfe6d58e2a3dd94496db0f36",
+      "size": 62
+    }
+  ]
+}

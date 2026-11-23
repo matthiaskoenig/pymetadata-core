@@ -1,0 +1,255 @@
+{
+  "BIOMD0000000001.omex": [
+    {
+      "format": "http://purl.org/NET/mediatypes/application/pdf",
+      "location": "./BIOMD0000000001.pdf",
+      "master": false
+    },
+    {
+      "format": "http://purl.org/NET/mediatypes/image/png",
+      "location": "./BIOMD0000000001_manual.png",
+      "master": false
+    },
+    {
+      "format": "http://identifiers.org/combine.specifications/sbml.level-2.version-4",
+      "location": "./BIOMD0000000001_url.xml",
+      "master": true
+    },
+    {
+      "format": "http://purl.org/NET/mediatypes/application/x-scilab",
+      "location": "./BIOMD0000000001.sci",
+      "master": false
+    },
+    {
+      "format": "http://purl.org/NET/mediatypes/application/x.unknown",
+      "location": "./BIOMD0000000001.xpp",
+      "master": false
+    },
+    {
+      "format": "http://purl.org/NET/mediatypes/application/x.unknown",
+      "location": "./BIOMD0000000001.m",
+      "master": false
+    },
+    {
+      "format": "http://purl.org/NET/mediatypes/application/x.unknown",
+      "location": "./BIOMD0000000001-biopax3.owl",
+      "master": false
+    },
+    {
+      "format": "http://purl.org/NET/mediatypes/image/svg+xml",
+      "location": "./BIOMD0000000001.svg",
+      "master": false
+    },
+    {
+      "format": "http://identifiers.org/combine.specifications/sbml.level-2.version-4",
+      "location": "./BIOMD0000000001_urn.xml",
+      "master": false
+    },
+    {
+      "format": "http://purl.org/NET/mediatypes/application/x.unknown",
+      "location": "./BIOMD0000000001.vcml",
+      "master": false
+    },
+    {
+      "format": "http://purl.org/NET/mediatypes/image/png",
+      "location": "./BIOMD0000000001.png",
+      "master": false
+    },
+    {
+      "format": "http://purl.org/NET/mediatypes/application/x.unknown",
+      "location": "./BIOMD0000000001-biopax2.owl",
+      "master": false
+    },
+    {
+      "format": "http://purl.org/NET/mediatypes/image/svg+xml",
+      "location": "./BIOMD0000000001_manual.svg",
+      "master": false
+    }
+  ],
+  "CombineArchiveShowCase.omex": [
+    {
+      "format": "http://identifiers.org/combine.specifications/omex",
+      "location": ".",
+      "master": false
+    },
+    {
+      "format": "http://identifiers.org/combine.specifications/omex-manifest",
+      "location": "./manifest.xml",
+      "master": false
+    },
+    {
+      "format": "http://purl.org/NET/mediatypes/text/x-markdown",
+      "location": "./README.md",
+      "master": false
+    },
+    {
+      "format": "http://identifiers.org/combine.specifications/sbml.level-2.version-1",
+      "location": "./model/BIOMD0000000144.xml",
+      "master": false
+    },
+    {
+      "format": "http://purl.org/NET/mediatypes/application/illustrator",
+      "location": "./model/calzone_2007.ai",
+      "master": false
+    },
+    {
+      "format": "http://purl.org/NET/mediatypes/image/png",
+      "location": "./model/calzone_2007.png",
+      "master": false
+    },
+    {
+      "format": "http://purl.org/NET/mediatypes/image/svg+xml",
+      "location": "./model/calzone_2007.svg",
+      "master": false
+    },
+    {
+      "format": "http://identifiers.org/combine.specifications/cellml",
+      "location": "./model/calzone_thieffry_tyson_novak_2007.cellml",
+      "master": false
+    },
+    {
+      "format": "http://identifiers.org/combine.specifications/sbgn.pd",
+      "location": "./model/sbgn/Calzone2007.sbgn",
+      "master": false
+    },
+    {
+      "format": "http://purl.org/NET/mediatypes/text/plain",
+      "location": "./model/sbgn/Calzone2007.gml",
+      "master": false
+    },
+    {
+      "format": "http://purl.org/NET/mediatypes/application/xml",
+      "location": "./model/sbgn/Calzone2007.graphml",
+      "master": false
+    },
+    {
+      "format": "http://purl.org/NET/mediatypes/image/png",
+      "location": "./model/sbgn/Calzone2007.png",
+      "master": false
+    },
+    {
+      "format": "http://purl.org/NET/mediatypes/application/pdf",
+      "location": "./model/sbgn/Calzone2007.pdf",
+      "master": false
+    },
+    {
+      "format": "http://identifiers.org/combine.specifications/sed-ml.level-1.version-1",
+      "location": "./experiment/Calzone2007-default-simulation.xml",
+      "master": false
+    },
+    {
+      "format": "http://identifiers.org/combine.specifications/sed-ml.level-1.version-1",
+      "location": "./experiment/Calzone2007-simulation-figure-1B.xml",
+      "master": true
+    },
+    {
+      "format": "http://purl.org/NET/mediatypes/application/pdf",
+      "location": "./documentation/Calzone2007.pdf",
+      "master": false
+    },
+    {
+      "format": "http://purl.org/NET/mediatypes/application/pdf",
+      "location": "./documentation/Calzone2007-supplementary-material.pdf",
+      "master": false
+    },
+    {
+      "format": "http://purl.org/NET/mediatypes/image/png",
+      "location": "./result/Fig1B-top-webtools.png",
+      "master": false
+    },
+    {
+      "format": "http://purl.org/NET/mediatypes/image/png",
+      "location": "./result/Fig1B-bottom-webtools.png",
+      "master": false
+    },
+    {
+      "format": "http://purl.org/NET/mediatypes/image/svg+xml",
+      "location": "./result/Fig1B-top-COPASI.svg",
+      "master": false
+    },
+    {
+      "format": "http://purl.org/NET/mediatypes/image/svg+xml",
+      "location": "./result/Fig1B-bottom-COPASI.svg",
+      "master": false
+    },
+    {
+      "format": "http://identifiers.org/combine.specifications/omex-metadata",
+      "location": "./metadata.rdf",
+      "master": false
+    }
+  ],
+  "CompModels.omex": [
+    {
+      "format": "http://identifiers.org/combine.specifications/omex",
+      "location": ".",
+      "master": false
+    },
+    {
+      "format": "http://identifiers.org/combine.specifications/omex-manifest",
+      "location": "./manifest.xml",
+      "master": false
+    },
+    {
+      "format": "http://purl.org/NET/mediatypes/text/x-markdown",
+      "location": "./README.md",
+      "master": false
+    },
+    {
+      "format": "http://identifiers.org/combine.specifications/sbml.level-3.version-1",
+      "location": "./models/omex_comp.xml",
+      "master": false
+    },
+    {
+      "format": "http://identifiers.org/combine.specifications/sbml.level-3.version-1",
+      "location": "./models/omex_comp_flat.xml",
+      "master": false
+    },
+    {
+      "format": "http://identifiers.org/combine.specifications/sbml.level-3.version-1",
+      "location": "./models/omex_minimal.xml",
+      "master": false
+    }
+  ],
+  "iCGB21FR.omex": [
+    {
+      "format": "https://identifiers.org/combine.specifications/omex",
+      "location": ".",
+      "master": false
+    },
+    {
+      "format": "https://identifiers.org/combine.specifications/omex-manifest",
+      "location": "./manifest.xml",
+      "master": false
+    },
+    {
+      "format": "https://identifiers.org/combine.specifications/omex-metadata",
+      "location": "./metadata.rdf",
+      "master": false
+    },
+    {
+      "format": "https://identifiers.org/combine.specifications/sbml.level-3.version-1",
+      "location": "./iCGB21FR.xml",
+      "master": true
+    },
+    {
+      "format": "http://purl.org/NET/mediatypes/application/sbgnml+xml",
+      "location": "./iCGB21FR_map.sbgn",
+      "master": false
+    },
+    {
+      "format": "http://purl.org/NET/mediatypes/application/json",
+      "location": "./iCGB21FR_map.json",
+      "master": false
+    },
+    {
+      "format": "http://purl.org/NET/mediatypes/text/html",
+      "location": "./iCGB21FR_memote.html",
+      "master": false
+    },
+    {
+      "format": "http://purl.org/NET/mediatypes/text/plain",
+      "location": "./FROG/iCGB21FR_FROG_Report.txt",
+      "master": false
+    }
+  ]
+}
