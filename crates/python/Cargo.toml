@@ -24,7 +24,7 @@ crate-type = ["cdylib", "rlib"]
 extension-module = ["pyo3/extension-module"]
 
 [dependencies]
-pymetadata-core = { path = "../core", version = "0.1.0" }
+pymetadata-core = { path = "../core", version = "0.2.0" }
 pyo3.workspace = true
 
 [lints]
