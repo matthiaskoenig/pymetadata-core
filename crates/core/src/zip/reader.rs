@@ -4,14 +4,11 @@ use std::borrow::Cow;
 
 use flate2::{Decompress, FlushDecompress, Status};
 
-use super::crypto::{self, ENCRYPTED, STRONG_ENCRYPTION};
+use super::crypto;
 use super::eocd::Eocd;
+use super::spec::{DEFLATE, ENCRYPTED, STORED, STRONG_ENCRYPTION};
 use super::{Member, OmexError, as_usize, central, local, slice_at};
 
-/// The stored method: the bytes of the member are its content.
-const STORED: u16 = 0;
-/// The deflate method, which is what every other member of a COMBINE archive uses.
-const DEFLATE: u16 = 8;
 /// The largest factor by which deflate can expand data, which bounds a declared size.
 const MAX_EXPANSION: u64 = 1032;
 /// The step the buffer of a member grows by while it inflates, before it doubles.
@@ -350,6 +347,8 @@ fn method_name(method: u16) -> Option<&'static str> {
 
 #[cfg(test)]
 mod tests {
+    use crate::zip::spec::EOCD_SIGNATURE;
+
     use super::*;
 
     /// An end-of-central-directory record over `entries` members at `cd_offset`.
@@ -358,7 +357,8 @@ mod tests {
     /// tests here build on; everything bigger is a fixture of `tests/data/zip/`, written by
     /// python's `zipfile` in `scripts/zip_edge_fixtures.py`.
     fn end_record(entries: u16, cd_offset: u32) -> Vec<u8> {
-        let mut bytes = b"PK\x05\x06\0\0\0\0".to_vec();
+        let mut bytes = EOCD_SIGNATURE.to_vec();
+        bytes.extend_from_slice(&[0; 4]); // this disk, and the disk the directory starts on
         bytes.extend_from_slice(&entries.to_le_bytes());
         bytes.extend_from_slice(&entries.to_le_bytes());
         bytes.extend_from_slice(&0u32.to_le_bytes()); // the size of the central directory

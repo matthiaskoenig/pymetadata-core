@@ -12,27 +12,12 @@
 //! the length of what sits in front, and every offset of the archive is off by it. That is how
 //! python's `zipfile` reads such an archive, and the core follows it.
 
+use super::spec::{
+    EOCD_SIGNATURE, EOCD_SIZE, MAX_COMMENT, SENTINEL16, SENTINEL32, ZIP64_EOCD_SIGNATURE,
+    ZIP64_EOCD_SIZE, ZIP64_LOCATOR_SIGNATURE, ZIP64_LOCATOR_SIZE,
+};
 use super::{as_usize, end_of, has_signature, u16_at, u32_at, u64_at};
 use crate::OmexError;
-
-/// The signature of an end-of-central-directory record.
-const SIGNATURE: [u8; 4] = *b"PK\x05\x06";
-/// The size of an end-of-central-directory record, its comment excluded.
-const SIZE: usize = 22;
-/// The largest archive comment, which bounds the backward scan for the record.
-const MAX_COMMENT: usize = 0xffff;
-/// The signature of the locator of the zip64 end-of-central-directory record.
-const LOCATOR_SIGNATURE: [u8; 4] = *b"PK\x06\x07";
-/// The size of that locator, which sits right in front of the record it belongs to.
-const LOCATOR_SIZE: usize = 20;
-/// The signature of a zip64 end-of-central-directory record.
-const ZIP64_SIGNATURE: [u8; 4] = *b"PK\x06\x06";
-/// The size of a zip64 end-of-central-directory record without an extensible data sector.
-const ZIP64_SIZE: usize = 56;
-/// The value a 16 bit field carries when the zip64 record holds the real one.
-const SENTINEL16: u16 = 0xffff;
-/// The value a 32 bit field carries when the zip64 record holds the real one.
-const SENTINEL32: u32 = 0xffff_ffff;
 
 /// Where the central directory of an archive is and how many members it lists.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -74,7 +59,7 @@ impl Eocd {
     /// record it belongs to reaches past the end of the archive, or if the central directory it
     /// declares cannot be reconciled with where the record was found.
     pub(super) fn find(bytes: &[u8]) -> Result<Eocd, OmexError> {
-        let Some(highest) = bytes.len().checked_sub(SIZE) else {
+        let Some(highest) = bytes.len().checked_sub(EOCD_SIZE) else {
             return Err(OmexError::Malformed(format!(
                 "{} bytes are too few for a zip archive",
                 bytes.len()
@@ -83,11 +68,11 @@ impl Eocd {
         let lowest = highest.saturating_sub(MAX_COMMENT);
         let mut last = None;
         for position in (lowest..=highest).rev() {
-            if !has_signature(bytes, position, &SIGNATURE) {
+            if !has_signature(bytes, position, &EOCD_SIGNATURE) {
                 continue;
             }
             let comment = usize::from(u16_at(bytes, position + 20)?);
-            if position.saturating_add(SIZE).saturating_add(comment) == bytes.len() {
+            if position.saturating_add(EOCD_SIZE).saturating_add(comment) == bytes.len() {
                 return Self::read(bytes, position);
             }
             last = last.or(Some(position));
@@ -139,20 +124,20 @@ impl Eocd {
     /// [`OmexError::Malformed`] if the locator points past the end of the archive or at
     /// something which is not a zip64 end-of-central-directory record.
     fn zip64(bytes: &[u8], position: usize) -> Result<Option<Trailer>, OmexError> {
-        let Some(locator) = position.checked_sub(LOCATOR_SIZE) else {
+        let Some(locator) = position.checked_sub(ZIP64_LOCATOR_SIZE) else {
             return Ok(None);
         };
-        if !has_signature(bytes, locator, &LOCATOR_SIGNATURE) {
+        if !has_signature(bytes, locator, &ZIP64_LOCATOR_SIGNATURE) {
             return Ok(None);
         }
-        let record = match locator.checked_sub(ZIP64_SIZE) {
-            Some(behind) if has_signature(bytes, behind, &ZIP64_SIGNATURE) => behind,
+        let record = match locator.checked_sub(ZIP64_EOCD_SIZE) {
+            Some(behind) if has_signature(bytes, behind, &ZIP64_EOCD_SIGNATURE) => behind,
             _ => {
                 let declared = as_usize(
                     u64_at(bytes, end_of(locator, 8)?)?,
                     "the offset of the zip64 end-of-central-directory record",
                 )?;
-                if !has_signature(bytes, declared, &ZIP64_SIGNATURE) {
+                if !has_signature(bytes, declared, &ZIP64_EOCD_SIGNATURE) {
                     return Err(OmexError::Malformed(format!(
                         "no zip64 end-of-central-directory record at offset {declared}"
                     )));

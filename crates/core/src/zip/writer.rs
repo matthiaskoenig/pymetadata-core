@@ -10,30 +10,13 @@
 
 use flate2::{Compress, Compression, FlushCompress, Status};
 
+use super::spec::{
+    CENTRAL_SIGNATURE, DEFLATE, EOCD_SIGNATURE, LOCAL_SIGNATURE, SENTINEL16_U64, SENTINEL32_U64,
+    STORED, UTF8_NAME, VERSION, ZIP64_EOCD_SIGNATURE, ZIP64_EXTRA, ZIP64_LOCATOR_SIGNATURE,
+    ZIP64_VERSION,
+};
 use super::{Member, OmexError, as_usize};
 
-/// The signature of a local file header.
-const LOCAL_SIGNATURE: [u8; 4] = *b"PK\x03\x04";
-/// The signature of a central directory file header.
-const CENTRAL_SIGNATURE: [u8; 4] = *b"PK\x01\x02";
-/// The signature of an end-of-central-directory record.
-const EOCD_SIGNATURE: [u8; 4] = *b"PK\x05\x06";
-/// The signature of a zip64 end-of-central-directory record.
-const ZIP64_EOCD_SIGNATURE: [u8; 4] = *b"PK\x06\x06";
-/// The signature of the locator of a zip64 end-of-central-directory record.
-const ZIP64_LOCATOR_SIGNATURE: [u8; 4] = *b"PK\x06\x07";
-/// The header id of the zip64 extended information extra field.
-const ZIP64_EXTRA: u16 = 0x0001;
-/// The stored method: the bytes of the member are its content.
-const STORED: u16 = 0;
-/// The deflate method, which is what a COMBINE archive uses.
-const DEFLATE: u16 = 8;
-/// Bit 11 of the general purpose flags: the member name is UTF-8 and not CP437.
-const UTF8_NAME: u16 = 0x0800;
-/// The version a reader needs for an ordinary member, 2.0, which is deflate.
-const VERSION: u16 = 20;
-/// The version a reader needs for the zip64 records, 4.5.
-const ZIP64_VERSION: u16 = 45;
 /// The host of the version made by field: 3 is unix, which is what python's `zipfile` writes.
 const UNIX: u16 = 3 << 8;
 /// The host of the version made by field for a member without a unix mode: 0 is MS-DOS.
@@ -46,16 +29,6 @@ const MS_DOS: u16 = 0;
 /// The field holds the mode in its high 16 bits for a unix host. Zero would extract as a file
 /// without any permission at all, which is why `zipfile` writes a mode here too.
 const REGULAR_FILE: u32 = 0o100_644 << 16;
-/// The largest value a 32 bit field of the container can hold.
-///
-/// A size or an offset of exactly this value needs the zip64 records all the same: the value is
-/// the sentinel which says that the real one is in the zip64 record, so a reader which met it
-/// in a 32 bit field would look for a record which is not there.
-const SENTINEL32: u64 = u32::MAX as u64;
-/// The largest number of members the 16 bit count of the end-of-central-directory record holds.
-///
-/// As for [`SENTINEL32`], the value itself is the sentinel and needs the zip64 record.
-const SENTINEL16: u64 = u16::MAX as u64;
 /// The highest compression level deflate knows.
 ///
 /// A level above it is refused here: `flate2` asserts the level of its compressor and would
@@ -247,7 +220,9 @@ impl Writer {
         let cd_offset = self.body.len() as u64;
         let cd_size = self.central.len() as u64;
         self.body.append(&mut self.central);
-        let zip64 = self.count >= SENTINEL16 || cd_size >= SENTINEL32 || cd_offset >= SENTINEL32;
+        let zip64 = self.count >= SENTINEL16_U64
+            || cd_size >= SENTINEL32_U64
+            || cd_offset >= SENTINEL32_U64;
         if zip64 {
             // the zip64 record, then its locator, then the 32 bit record of sentinels: a reader
             // reads the last one, finds the locator right in front of it and follows it back
@@ -273,16 +248,16 @@ impl Writer {
         // holds it too, which is how python's `zipfile` writes it; the three are independent
         // here, where the zip64 record holds all of them, and not in a file header, where the
         // extra field holds the two sizes together or neither of them
-        let count = narrow16(self.count, self.count >= SENTINEL16);
+        let count = narrow16(self.count, self.count >= SENTINEL16_U64);
         self.body.extend_from_slice(&EOCD_SIGNATURE);
         self.body.extend_from_slice(&0u16.to_le_bytes()); // this disk
         self.body.extend_from_slice(&0u16.to_le_bytes()); // the disk of the directory
         self.body.extend_from_slice(&count.to_le_bytes());
         self.body.extend_from_slice(&count.to_le_bytes());
         self.body
-            .extend_from_slice(&narrow32(cd_size, cd_size >= SENTINEL32).to_le_bytes());
+            .extend_from_slice(&narrow32(cd_size, cd_size >= SENTINEL32_U64).to_le_bytes());
         self.body
-            .extend_from_slice(&narrow32(cd_offset, cd_offset >= SENTINEL32).to_le_bytes());
+            .extend_from_slice(&narrow32(cd_offset, cd_offset >= SENTINEL32_U64).to_le_bytes());
         self.body.extend_from_slice(&0u16.to_le_bytes()); // no archive comment
         self.body
     }
@@ -346,12 +321,12 @@ struct Record<'a> {
 impl Record<'_> {
     /// Do the sizes of the member need the zip64 extra field?
     fn sizes64(&self) -> bool {
-        self.compressed_size >= SENTINEL32 || self.uncompressed_size >= SENTINEL32
+        self.compressed_size >= SENTINEL32_U64 || self.uncompressed_size >= SENTINEL32_U64
     }
 
     /// Does the offset of the member need the zip64 extra field?
     fn offset64(&self) -> bool {
-        self.offset >= SENTINEL32
+        self.offset >= SENTINEL32_U64
     }
 
     /// The general purpose bit flags of the member.
@@ -652,8 +627,8 @@ mod tests {
         assert_eq!(version_made_by(&small), UNIX | VERSION);
         assert_eq!(version_needed(&small), VERSION);
         for large in [
-            central_only(&record("sizes.bin", SENTINEL32, SENTINEL32, 0)),
-            central_only(&record("offset.bin", 1, 1, SENTINEL32)),
+            central_only(&record("sizes.bin", SENTINEL32_U64, SENTINEL32_U64, 0)),
+            central_only(&record("offset.bin", 1, 1, SENTINEL32_U64)),
         ] {
             assert_eq!(version_made_by(&large), UNIX | ZIP64_VERSION);
             assert_eq!(version_needed(&large), ZIP64_VERSION);
@@ -681,12 +656,12 @@ mod tests {
     #[test]
     fn writes_the_zip64_extra_field_of_a_large_member() {
         for (uncompressed, compressed, offset) in [
-            (SENTINEL32, 1, 0),
-            (1, SENTINEL32, 0),
-            (SENTINEL32 + 7, SENTINEL32 + 3, 0),
-            (1, 1, SENTINEL32),
-            (1, 1, SENTINEL32 + 9),
-            (SENTINEL32 + 1, 4, SENTINEL32 + 9),
+            (SENTINEL32_U64, 1, 0),
+            (1, SENTINEL32_U64, 0),
+            (SENTINEL32_U64 + 7, SENTINEL32_U64 + 3, 0),
+            (1, 1, SENTINEL32_U64),
+            (1, 1, SENTINEL32_U64 + 9),
+            (SENTINEL32_U64 + 1, 4, SENTINEL32_U64 + 9),
         ] {
             let what = format!("{uncompressed}/{compressed} at {offset}");
             let bytes = central_only(&record("big.bin", compressed, uncompressed, offset));
@@ -704,10 +679,15 @@ mod tests {
     /// A member of a size which fits carries no zip64 extra field at all.
     #[test]
     fn writes_no_zip64_extra_field_for_a_member_which_needs_none() {
-        let bytes = central_only(&record("small.bin", SENTINEL32 - 1, SENTINEL32 - 1, 7));
+        let bytes = central_only(&record(
+            "small.bin",
+            SENTINEL32_U64 - 1,
+            SENTINEL32_U64 - 1,
+            7,
+        ));
         let member = members(&bytes).pop().unwrap();
-        assert_eq!(member.compressed_size, SENTINEL32 - 1);
-        assert_eq!(member.uncompressed_size, SENTINEL32 - 1);
+        assert_eq!(member.compressed_size, SENTINEL32_U64 - 1);
+        assert_eq!(member.uncompressed_size, SENTINEL32_U64 - 1);
         assert_eq!(member.header_offset, 7);
         // the central header, its name and the record which closes the archive, no extra field
         assert_eq!(bytes.len(), 46 + "small.bin".len() + 22);
@@ -717,7 +697,7 @@ mod tests {
     /// The local file header of a large member carries the sentinels and both sizes.
     #[test]
     fn writes_the_zip64_extra_field_of_a_local_header() {
-        let record = record("big.bin", SENTINEL32 + 3, SENTINEL32 + 7, 0);
+        let record = record("big.bin", SENTINEL32_U64 + 3, SENTINEL32_U64 + 7, 0);
         let mut bytes = Vec::new();
         record.write_local(&mut bytes);
         assert_eq!(bytes[18..26], [0xff; 8], "the sizes are not the sentinel");
@@ -729,11 +709,11 @@ mod tests {
         );
         assert_eq!(
             u64::from_le_bytes(extra[4..12].try_into().unwrap()),
-            SENTINEL32 + 7
+            SENTINEL32_U64 + 7
         );
         assert_eq!(
             u64::from_le_bytes(extra[12..20].try_into().unwrap()),
-            SENTINEL32 + 3
+            SENTINEL32_U64 + 3
         );
         // the data of the member starts behind the name and the extra field
         let member = members(&central_only(&record)).pop().unwrap();

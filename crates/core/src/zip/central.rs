@@ -4,20 +4,12 @@
 //! a member: the local file header in front of the data repeats its fields and is allowed to
 //! leave them zero when the member was written through a stream.
 
-use super::crypto::{ENCRYPTED, STRONG_ENCRYPTION};
 use super::eocd::Eocd;
+use super::spec::{
+    CENTRAL_FIXED_SIZE, CENTRAL_SIGNATURE, ENCRYPTED, SENTINEL32, STRONG_ENCRYPTION, UTF8_NAME,
+    ZIP64_EXTRA,
+};
 use super::{OmexError, as_usize, end_of, has_signature, slice_at, u16_at, u32_at, u64_at};
-
-/// The signature of a central directory file header.
-const SIGNATURE: [u8; 4] = *b"PK\x01\x02";
-/// The size of a central directory file header, its name, extra field and comment excluded.
-const FIXED_SIZE: usize = 46;
-/// The header id of the zip64 extended information extra field.
-const ZIP64_EXTRA: u16 = 0x0001;
-/// The value a 32 bit size or offset carries when the zip64 extra field holds the real one.
-const SENTINEL32: u32 = 0xffff_ffff;
-/// Bit 11 of the general purpose flags: the member name is UTF-8 and not CP437.
-const UTF8_NAME: u16 = 0x0800;
 
 /// The upper half of CP437, the code page a member name without bit 11 is written in.
 const CP437_HIGH: [char; 128] = [
@@ -96,10 +88,10 @@ pub(super) fn members(bytes: &[u8], eocd: &Eocd) -> Result<Vec<Member>, OmexErro
     let mut cursor = as_usize(eocd.cd_offset, "the offset of the central directory")?;
     let mut members = Vec::new();
     // the declared count is host controlled and can be huge, but every member read costs at
-    // least `FIXED_SIZE` bytes of the archive, so the count cannot drive work or allocation
-    // beyond what the input holds: the signature check below ends the loop
+    // least `CENTRAL_FIXED_SIZE` bytes of the archive, so the count cannot drive work or
+    // allocation beyond what the input holds: the signature check below ends the loop
     for index in 0..eocd.entries {
-        if !has_signature(bytes, cursor, &SIGNATURE) {
+        if !has_signature(bytes, cursor, &CENTRAL_SIGNATURE) {
             return Err(OmexError::Malformed(format!(
                 "the central directory has no file header for member {index} at offset {cursor}"
             )));
@@ -140,7 +132,7 @@ fn read(bytes: &[u8], offset: usize) -> Result<(Member, usize), OmexError> {
     let comment_len = usize::from(u16_at(bytes, end_of(offset, 32)?)?);
     let external_attributes = u32_at(bytes, end_of(offset, 38)?)?;
     let header_offset = u32_at(bytes, end_of(offset, 42)?)?;
-    let name_at = end_of(offset, FIXED_SIZE)?;
+    let name_at = end_of(offset, CENTRAL_FIXED_SIZE)?;
     let extra_at = end_of(name_at, name_len)?;
     let comment_at = end_of(extra_at, extra_len)?;
     let mut member = Member {

@@ -9,12 +9,16 @@
 //! offset and count is read from host controlled bytes, so it is checked against the buffer
 //! before it is used: a crafted archive is an [`OmexError`] and never a panic, which would trap
 //! a wasm instance.
+//!
+//! One module per record, and `spec` for the constants the format prescribes, which the reader
+//! and the writer both speak and therefore declare once.
 
 mod central;
 mod crypto;
 mod eocd;
 mod local;
 mod reader;
+mod spec;
 mod writer;
 
 pub use central::Member;

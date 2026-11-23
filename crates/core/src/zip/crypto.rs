@@ -5,14 +5,9 @@
 //! is all this module does. WinZip AES and strong encryption are refused by the reader before
 //! the bytes get here.
 
+use super::spec::DATA_DESCRIPTOR;
 use super::{Member, OmexError};
 
-/// Bit 0 of the general purpose flags: the member is encrypted.
-pub(super) const ENCRYPTED: u16 = 0x0001;
-/// Bit 3 of the general purpose flags: sizes and CRC32 follow the data in a data descriptor.
-const DATA_DESCRIPTOR: u16 = 0x0008;
-/// Bit 6 of the general purpose flags: strong encryption, which is not ZipCrypto.
-pub(super) const STRONG_ENCRYPTION: u16 = 0x0040;
 /// The length of the encryption header in front of the data of a member.
 const HEADER_LEN: usize = 12;
 /// The initial values of the three keys.

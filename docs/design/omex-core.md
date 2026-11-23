@@ -100,6 +100,9 @@ lookup milestone needs one.
 
 `crates/core/src`, one responsibility per module:
 
+- `zip/spec.rs`: the constants of the format, declared once for the reader and
+  the writer, so that the two cannot drift apart over a signature, a method, a
+  flag bit or a sentinel.
 - `zip/eocd.rs`, `zip/central.rs`, `zip/local.rs`: the container records.
 - `zip/reader.rs`: the lazy reader, member lookup, raw and inflated bytes.
 - `zip/writer.rs`: the writer, `stored`, `deflate` and raw copy.
