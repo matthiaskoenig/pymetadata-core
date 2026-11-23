@@ -5,6 +5,7 @@ pub mod formats;
 mod formats_table;
 pub mod location;
 pub mod manifest;
+pub mod zip;
 
 pub use error::OmexError;
 pub use formats::{UNKNOWN_FORMAT, guess_format, lookup_format};
