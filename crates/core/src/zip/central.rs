@@ -58,6 +58,9 @@ pub struct Member {
     pub header_offset: u64,
     /// The general purpose bit flags: bit 0 encryption, bit 3 a data descriptor, bit 11 UTF-8.
     pub flags: u16,
+    /// The modification time in MS-DOS format, whose high byte checks the password of an
+    /// encrypted member written through a stream.
+    pub dos_time: u16,
 }
 
 /// Read every member the central directory of `bytes` lists.
@@ -108,6 +111,7 @@ pub(super) fn members(bytes: &[u8], eocd: &Eocd) -> Result<Vec<Member>, OmexErro
 fn read(bytes: &[u8], offset: usize) -> Result<(Member, usize), OmexError> {
     let flags = u16_at(bytes, end_of(offset, 8)?)?;
     let method = u16_at(bytes, end_of(offset, 10)?)?;
+    let dos_time = u16_at(bytes, end_of(offset, 12)?)?;
     let crc32 = u32_at(bytes, end_of(offset, 16)?)?;
     let compressed_size = u32_at(bytes, end_of(offset, 20)?)?;
     let uncompressed_size = u32_at(bytes, end_of(offset, 24)?)?;
@@ -126,6 +130,7 @@ fn read(bytes: &[u8], offset: usize) -> Result<(Member, usize), OmexError> {
         uncompressed_size: uncompressed_size.into(),
         header_offset: header_offset.into(),
         flags,
+        dos_time,
     };
     let sentinel = [compressed_size, uncompressed_size, header_offset].contains(&SENTINEL32);
     let extra = slice_at(bytes, extra_at, extra_len)?;

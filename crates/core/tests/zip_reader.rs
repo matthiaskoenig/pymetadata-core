@@ -313,21 +313,22 @@ fn refuses_an_oversized_member() {
 /// `inflate_matches_python_zipfile` reads all four archives under it.
 #[test]
 fn refuses_more_than_it_may_inflate() {
-    // the default allowance, against a member which declares 2 GB
+    // two compressed bytes which declare 2 GB are no member beyond the allowance, they are a
+    // lie: raising the budget would not read them, so they are malformed and name both numbers
     let bytes = fixture("zip/oversized.zip");
     let reader = Reader::new(&bytes).unwrap();
     let member = &reader.members()[2];
     assert_eq!(member.name, "beyond_the_cap.txt");
     assert!(member.uncompressed_size > MAX_INFLATED_SIZE as u64);
     let error = reader.inflate(member).unwrap_err();
-    assert!(matches!(error, OmexError::Refused(_)), "{error}");
+    assert!(matches!(error, OmexError::Malformed(_)), "{error}");
     let message = error.to_string();
     assert!(
         message.contains(&member.uncompressed_size.to_string()),
         "{message}"
     );
     assert!(
-        message.contains(&MAX_INFLATED_SIZE.to_string()),
+        message.contains(&format!("{} compressed bytes", member.compressed_size)),
         "{message}"
     );
 
@@ -345,6 +346,18 @@ fn refuses_more_than_it_may_inflate() {
             assert!(lowered.inflate(small).is_ok(), "{}", small.name);
         }
     }
+
+    // a declaration the compressed bytes can produce, which is merely above the allowance, is
+    // refused before anything is allocated: 100 bytes of a deflate stream may hold 100 KB
+    let plain = fixture("omex/CompModels.omex");
+    let tight = Reader::with_max_inflated_size(&plain, 0).unwrap();
+    let member = tight
+        .members()
+        .iter()
+        .find(|m| m.method == 8 && m.uncompressed_size > 0)
+        .unwrap();
+    let error = tight.inflate(member).unwrap_err();
+    assert!(matches!(error, OmexError::Refused(_)), "{error}");
 
     // the corpus leaves the default two orders of magnitude of room
     for archive in ARCHIVES {
@@ -373,6 +386,32 @@ fn refuses_a_stream_longer_than_the_declared_size() {
     assert_eq!(member.uncompressed_size, 10);
     let error = reader.inflate(member).unwrap_err();
     assert!(matches!(error, OmexError::Malformed(_)), "{error}");
-    // the buffer stops one byte behind what the member declares, and that is what is reported
-    assert!(error.to_string().contains("holds 11 bytes"), "{error}");
+    // the message names the declared size and does not pin how far the stream went, which
+    // depends on the allocator
+    assert!(error.to_string().contains("says 10"), "{error}");
+}
+
+/// A deflate member of zero compressed bytes and zero uncompressed bytes is an empty member,
+/// which is what .NET writes for an empty entry and what python's `zipfile` reads.
+#[test]
+fn reads_an_empty_deflate_member_of_no_bytes() {
+    let bytes = fixture("zip/empty_deflate.zip");
+    let reader = Reader::new(&bytes).unwrap();
+    let member = &reader.members()[0];
+    assert_eq!((member.method, member.compressed_size), (8, 0));
+    assert_eq!(reader.inflate(member).unwrap(), b"");
+}
+
+/// A zero byte deflate stream which claims to hold bytes is malformed.
+#[test]
+fn refuses_a_zero_byte_stream_which_claims_bytes() {
+    let mut bytes = fixture("zip/empty_deflate.zip");
+    let central = bytes
+        .windows(4)
+        .position(|window| window == b"PK\x01\x02")
+        .unwrap();
+    bytes[central + 24..central + 28].copy_from_slice(&5u32.to_le_bytes());
+    let reader = Reader::new(&bytes).unwrap();
+    let error = reader.inflate(&reader.members()[0]).unwrap_err();
+    assert!(matches!(error, OmexError::Malformed(_)), "{error}");
 }

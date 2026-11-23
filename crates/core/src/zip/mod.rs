@@ -11,6 +11,7 @@
 //! a wasm instance.
 
 mod central;
+mod crypto;
 mod eocd;
 mod local;
 mod reader;

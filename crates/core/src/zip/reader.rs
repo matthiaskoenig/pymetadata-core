@@ -1,7 +1,10 @@
 //! The lazy reader of a zip container.
 
+use std::borrow::Cow;
+
 use flate2::{Decompress, FlushDecompress, Status};
 
+use super::crypto::{self, ENCRYPTED, STRONG_ENCRYPTION};
 use super::eocd::Eocd;
 use super::{Member, OmexError, as_usize, central, local, slice_at};
 
@@ -38,6 +41,8 @@ pub struct Reader<'a> {
     members: Vec<Member>,
     /// The number of uncompressed bytes one member may inflate to.
     max_inflated_size: usize,
+    /// The password of the encrypted members, if the host has one.
+    password: Option<Vec<u8>>,
 }
 
 impl<'a> Reader<'a> {
@@ -51,7 +56,7 @@ impl<'a> Reader<'a> {
     /// [`OmexError::Malformed`] if the bytes are no zip archive, or if a record of the container
     /// reaches past their end.
     pub fn new(bytes: &'a [u8]) -> Result<Self, OmexError> {
-        Self::with_max_inflated_size(bytes, MAX_INFLATED_SIZE)
+        Self::open(bytes)
     }
 
     /// Read the central directory of the archive in `bytes`, inflating `limit` bytes at most.
@@ -65,13 +70,47 @@ impl<'a> Reader<'a> {
     /// [`OmexError::Malformed`] if the bytes are no zip archive, or if a record of the container
     /// reaches past their end.
     pub fn with_max_inflated_size(bytes: &'a [u8], limit: usize) -> Result<Self, OmexError> {
+        let mut reader = Self::open(bytes)?;
+        reader.max_inflated_size = limit;
+        Ok(reader)
+    }
+
+    /// Read the central directory of the archive in `bytes`, under the default allowance and
+    /// without a password.
+    fn open(bytes: &'a [u8]) -> Result<Self, OmexError> {
         let eocd = Eocd::find(bytes)?;
         let members = central::members(bytes, &eocd)?;
         Ok(Self {
             bytes,
             members,
-            max_inflated_size: limit,
+            max_inflated_size: MAX_INFLATED_SIZE,
+            password: None,
         })
+    }
+
+    /// Read the central directory of the archive in `bytes`, decrypting with `password`.
+    ///
+    /// The password is bytes and not text, as it is for python's `zipfile`. A member which is not
+    /// encrypted is read as it is, and the password is ignored for it. An empty password is no
+    /// password, as it is for `zipfile`, where `setpassword` maps a falsy one to none.
+    /// [`Reader::set_max_inflated_size`] combines it with another allowance.
+    ///
+    /// # Errors
+    ///
+    /// [`OmexError::Malformed`] if the bytes are no zip archive, or if a record of the container
+    /// reaches past their end.
+    pub fn new_with_password(bytes: &'a [u8], password: &[u8]) -> Result<Self, OmexError> {
+        let mut reader = Self::new(bytes)?;
+        reader.password = (!password.is_empty()).then(|| password.to_vec());
+        Ok(reader)
+    }
+
+    /// Change how many uncompressed bytes the reader inflates for one member at most.
+    ///
+    /// This is [`Reader::with_max_inflated_size`] for a reader which is built another way, such
+    /// as [`Reader::new_with_password`].
+    pub fn set_max_inflated_size(&mut self, limit: usize) {
+        self.max_inflated_size = limit;
     }
 
     /// The members of the archive, in the order of the central directory.
@@ -96,44 +135,55 @@ impl<'a> Reader<'a> {
 
     /// The uncompressed bytes of `member`, checked against its size and its CRC32.
     ///
+    /// An encrypted member is decrypted first, into a buffer of its own, and `raw` is left as
+    /// the archive stores it.
+    ///
     /// # Errors
     ///
-    /// [`OmexError::Refused`] if the member inflates to more than this reader allows,
+    /// [`OmexError::Refused`] if the member inflates to more than this reader allows, or is
+    /// encrypted and the reader has no password or the wrong one,
     /// [`OmexError::Unsupported`] if the member uses a compression method other than stored or
-    /// deflate, [`OmexError::Malformed`] if the member cannot be read, does not inflate, or
-    /// does not match the size and the CRC32 of the central directory.
+    /// deflate (WinZip AES is method 99) or strong encryption, [`OmexError::Malformed`] if the
+    /// member cannot be read, does not inflate, or does not match the size and the CRC32 of
+    /// the central directory.
     pub fn inflate(&self, member: &Member) -> Result<Vec<u8>, OmexError> {
         let raw = self.raw(member)?;
-        // the declared size is host controlled, so the budget of the host is held against it
-        // before anything at all is allocated for it
-        if member.uncompressed_size > self.max_inflated_size as u64 {
-            return Err(self.refuse(member, member.uncompressed_size));
+        if !matches!(member.method, STORED | DEFLATE) {
+            let method = member.method;
+            let known = method_name(method).map_or(String::new(), |name| format!(" ({name})"));
+            return Err(OmexError::Unsupported(format!(
+                "member {:?} uses compression method {method}{known}",
+                member.name
+            )));
         }
-        let data = match member.method {
-            // a stored member is its own uncompressed bytes, which the budget covers too
-            STORED if raw.len() > self.max_inflated_size => {
-                return Err(self.refuse(member, raw.len() as u64));
-            }
-            STORED => raw.to_vec(),
-            DEFLATE => decompress(raw, member, self.max_inflated_size)?,
-            method => {
-                let known = method_name(method).map_or(String::new(), |name| format!(" ({name})"));
-                return Err(OmexError::Unsupported(format!(
-                    "member {:?} uses compression method {method}{known}",
+        if member.flags & STRONG_ENCRYPTION != 0 {
+            return Err(OmexError::Unsupported(format!(
+                "member {:?} uses strong encryption, which is not ZipCrypto",
+                member.name
+            )));
+        }
+        let stream = if member.flags & ENCRYPTED == 0 {
+            Cow::Borrowed(raw)
+        } else {
+            let password = self.password.as_deref().ok_or_else(|| {
+                OmexError::Refused(format!(
+                    "member {:?} is encrypted and the reader was given no password",
                     member.name
-                )));
+                ))
+            })?;
+            Cow::Owned(crypto::decrypt(member, raw, password)?)
+        };
+        let data = match member.method {
+            // a stored member is its own uncompressed bytes, which the budget covers too; a
+            // declared size which is another one is caught by `verify`
+            STORED if stream.len() > self.max_inflated_size => {
+                return Err(refuse(member, stream.len() as u64, self.max_inflated_size));
             }
+            STORED => stream.into_owned(),
+            _ => decompress(&stream, member, self.max_inflated_size)?,
         };
         verify(member, &data)?;
         Ok(data)
-    }
-
-    /// The error which refuses a member of `size` bytes as larger than the budget.
-    fn refuse(&self, member: &Member, size: u64) -> OmexError {
-        OmexError::Refused(format!(
-            "member {:?} inflates to {size} bytes, and this reader inflates {} bytes at most",
-            member.name, self.max_inflated_size
-        ))
     }
 }
 
@@ -162,10 +212,13 @@ impl std::fmt::Debug for Reader<'_> {
 /// # Errors
 ///
 /// [`OmexError::Malformed`] if the stream is corrupt, ends early, or if the declared
-/// uncompressed size is one no deflate stream of this length could carry.
+/// uncompressed size is one no deflate stream of this length could carry,
+/// [`OmexError::Refused`] if the declared size is one the stream could carry and `limit` is
+/// below it.
 fn decompress(raw: &[u8], member: &Member, limit: usize) -> Result<Vec<u8>, OmexError> {
-    // deflate expands by at most 1032:1, so a declared size far above that is a lie, and a lie
-    // is refused before it reaches an allocation
+    // deflate expands by at most 1032:1, so a declared size far above that is a lie, and a
+    // lie is malformed before it is anything else: a host which raised its budget would still
+    // not read it. It is refused before it reaches an allocation, like the budget is.
     let bound = (raw.len() as u64)
         .saturating_mul(MAX_EXPANSION)
         .saturating_add(1024);
@@ -176,6 +229,15 @@ fn decompress(raw: &[u8], member: &Member, limit: usize) -> Result<Vec<u8>, Omex
             member.uncompressed_size,
             raw.len()
         )));
+    }
+    if member.uncompressed_size > limit as u64 {
+        return Err(refuse(member, member.uncompressed_size, limit));
+    }
+    // a stream of no bytes holds an empty member, which is what .NET writes for an empty entry
+    // and `zipfile` reads; one which claims bytes goes on to fail like any stream which ends
+    // early
+    if raw.is_empty() && member.uncompressed_size == 0 {
+        return Ok(Vec::new());
     }
     let declared = as_usize(
         member.uncompressed_size,
@@ -227,6 +289,14 @@ fn decompress(raw: &[u8], member: &Member, limit: usize) -> Result<Vec<u8>, Omex
         }
     }
     Ok(data)
+}
+
+/// The error which refuses a member of `size` bytes as larger than the budget `limit`.
+fn refuse(member: &Member, size: u64, limit: usize) -> OmexError {
+    OmexError::Refused(format!(
+        "member {:?} inflates to {size} bytes, and this reader inflates {limit} bytes at most",
+        member.name
+    ))
 }
 
 /// Check `data` against the size and the CRC32 the central directory gives for `member`.
