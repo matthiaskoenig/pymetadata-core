@@ -141,6 +141,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "pymetadata-wasm"
+version = "0.1.0"
+dependencies = [
+ "pymetadata-core",
+ "serde_json",
+]
+
+[[package]]
 name = "pyo3"
 version = "0.30.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"

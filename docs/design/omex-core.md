@@ -267,8 +267,22 @@ Error codes mirror the sibling. The core produces four, the kind strings of
 `wire::kind`: `malformed`, `refused`, `unsupported` and `not_found`, one per
 variant of `OmexError`. Two more are host-level and the core never returns
 them: `internal`, which the wasm host raises for a failure outside of the core
-(e.g. a request before `omex_open`), and `panic`, which its panic hook raises,
-writing the message into the output buffer before the trap.
+(a request before `omex_open`, or a pointer and a length which are not a range
+of the input buffer, which is where `omex_alloc` is and the only place a
+request is read from), and `panic`, which its panic hook raises, writing the
+message into the output buffer before the trap.
+
+Two limitations of 0.1.0, both of them of the export list above and not of the
+core. `omex_open` takes no password, so a ZipCrypto protected archive cannot be
+opened in the browser, where the python host opens it with
+`Archive.from_bytes(data, password)`. And the host sets no budget of its own, so
+the browser inherits the 1 GiB inflate cap of `zip::MAX_INFLATED_SIZE`: a member
+which declares more is `refused`, with its size and the limit in the message,
+while a member under the cap which the instance cannot allocate aborts, and an
+abort on `wasm32` traps. A page sees that trap as a `RuntimeError` with no
+message of its own, the output buffer still holds whatever the call before it
+wrote, and the instance is spent: the loader instantiates a new one rather than
+calling into it again.
 
 `js/` ships `loader.mjs` with no dependency and no Node API, so it runs in a
 browser, a Web Worker and Node. `js/build.mjs` builds the module, copies it
@@ -305,8 +319,14 @@ Continuous integration, `.github/workflows/ci.yml`, with actions pinned to
 exact versions:
 
 - `checks`: `cargo fmt --check`, `clippy --locked --all-targets -D warnings`,
+  `cargo build -p pymetadata-wasm --release --locked --target
+  wasm32-unknown-unknown`,
   `cargo test --locked`, `RUSTDOCFLAGS="-D warnings" cargo doc --locked
-  --no-deps`.
+  --no-deps`. The release build of the module comes before the tests because
+  `crates/wasm/tests/imports.rs` reads it and fails when it is missing or older
+  than a source, a manifest or the lock, rather than skipping: a `cargo test`
+  which never saw the module is no answer about its imports, and `cargo test`
+  does not build another target by itself.
 - `wasm`: `cargo check --locked --workspace --exclude pymetadata-python` for
   `wasm32-unknown-unknown` and `wasm32-wasip1`, with and without default
   features.

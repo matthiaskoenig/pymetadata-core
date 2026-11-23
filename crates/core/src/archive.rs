@@ -4,7 +4,7 @@ use std::collections::HashMap;
 
 use crate::error::OmexError;
 use crate::formats::guess_format;
-use crate::location::normalize_location;
+use crate::location::{normalize_location, suffix};
 use crate::manifest::{Entry, Manifest};
 use crate::zip::{Member, Reader, Writer};
 
@@ -438,17 +438,6 @@ fn member_name(location: &str) -> &str {
     location.strip_prefix("./").unwrap_or(location)
 }
 
-/// The suffix of a location without the dot, empty when the file name has none.
-///
-/// A leading dot is no suffix, `.hidden` has none, as for python's `Path.suffix`.
-fn suffix(location: &str) -> &str {
-    let name = location.rsplit('/').next().unwrap_or(location);
-    match name.rfind('.') {
-        Some(dot) if dot > 0 => name.get(dot + 1..).unwrap_or(""),
-        _ => "",
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -474,14 +463,5 @@ mod tests {
         assert_eq!(archive.inflations, 2);
         assert_eq!(archive.entry_bytes(&location).unwrap(), first);
         assert_eq!(archive.inflations, 2, "the second call does not inflate");
-    }
-
-    /// The suffix of a location.
-    #[test]
-    fn suffix_of_a_location() {
-        assert_eq!(suffix("./a/b.tar.gz"), "gz");
-        assert_eq!(suffix("./a.d/b"), "");
-        assert_eq!(suffix("./.hidden"), "");
-        assert_eq!(suffix("./a."), "");
     }
 }

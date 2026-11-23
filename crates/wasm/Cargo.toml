@@ -1,0 +1,28 @@
+[package]
+name = "pymetadata-wasm"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "The WebAssembly host of pymetadata-core: a COMBINE archive read and written in the browser, with no imports"
+repository.workspace = true
+readme.workspace = true
+keywords.workspace = true
+categories.workspace = true
+# built into the wasm module of the npm package, not published as a crate
+publish = false
+
+# `cdylib` is the module a page loads and `rlib` is what `cargo test` builds. Every export of
+# this crate is a thin wrapper around a pure function of `crates/wasm/src/calls.rs`, so the whole
+# layer is tested natively and the wasm build adds no untested code.
+[lib]
+name = "pymetadata_wasm"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+pymetadata-core = { path = "../core", version = "0.1.0" }
+serde_json.workspace = true
+
+[lints]
+workspace = true

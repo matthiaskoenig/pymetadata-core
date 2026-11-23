@@ -1,7 +1,6 @@
 [workspace]
 resolver = "2"
-# `crates/wasm` is added by the task which creates it.
-members = ["crates/core", "crates/python"]
+members = ["crates/core", "crates/python", "crates/wasm"]
 # `pymetadata-python` is a member but not a default one. pyo3 refuses to build against an
 # interpreter older than its abi3 floor, so a crate in the default set would make a newer python
 # toolchain the price of `cargo test` on the core, for a binding most contributors never touch,
@@ -9,7 +8,7 @@ members = ["crates/core", "crates/python"]
 # `cargo test`, `cargo clippy` and `cargo doc` take without a `-p`; the binding is built
 # deliberately, with `-p pymetadata-python`. `--workspace` overrides this list and does reach it,
 # which is why the wasm checks exclude it by name.
-default-members = ["crates/core"]
+default-members = ["crates/core", "crates/wasm"]
 # the throwaway package of the spike sits at the repository root and is not a member
 exclude = ["spike"]
 

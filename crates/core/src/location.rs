@@ -1,4 +1,4 @@
-//! Normalization of the location of an archive entry.
+//! The location of an archive entry: its normalization and its suffix.
 
 use crate::error::OmexError;
 
@@ -46,6 +46,21 @@ pub fn normalize_location(location: &str) -> Result<String, OmexError> {
         Ok(".".to_string())
     } else {
         Ok(format!("./{}", segments.join("/")))
+    }
+}
+
+/// The suffix of a location without the dot, empty when the file name has none.
+///
+/// A leading dot is no suffix, `.hidden` has none, as for python's `Path.suffix`. This is what
+/// [`crate::guess_format`] takes as its first argument, so a host which has a location and no
+/// suffix at hand takes it from here rather than writing the rule a second time: the archive
+/// guesses the format of a zip member the manifest does not list with it, and the wasm host the
+/// format of an entry whose request carries none.
+pub fn suffix(location: &str) -> &str {
+    let name = location.rsplit('/').next().unwrap_or(location);
+    match name.rfind('.') {
+        Some(dot) if dot > 0 => name.get(dot + 1..).unwrap_or(""),
+        _ => "",
     }
 }
 
@@ -119,5 +134,15 @@ mod tests {
     #[test]
     fn refuses_backslash_parent() {
         assert!(normalize_location("..\\model.xml").is_err());
+    }
+
+    /// The suffix of a location is the one python's `Path.suffix` gives, without the dot.
+    #[test]
+    fn suffix_of_a_location() {
+        assert_eq!(suffix("./a/b.tar.gz"), "gz");
+        assert_eq!(suffix("./a.d/b"), "");
+        assert_eq!(suffix("./.hidden"), "");
+        assert_eq!(suffix("./a."), "");
+        assert_eq!(suffix("model.xml"), "xml");
     }
 }
