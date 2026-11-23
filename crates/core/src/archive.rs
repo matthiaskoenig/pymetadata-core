@@ -249,11 +249,23 @@ impl Archive {
 
     /// Remove an entry and its bytes, and return the entry.
     ///
-    /// `.`, `./manifest.xml` and an unknown location give `None` and change nothing.
-    pub fn remove_entry(&mut self, location: &str) -> Option<Entry> {
-        let entry = self.manifest.remove(location)?;
+    /// The location is normalized, as it is for every other call which takes one. `.`,
+    /// `./manifest.xml` and a location the archive does not list give `None` and change nothing:
+    /// the two entries the specification requires are not removed.
+    ///
+    /// # Errors
+    ///
+    /// [`OmexError::Refused`] for a location outside of the archive and for an absolute one, as
+    /// for [`Archive::entry_bytes`] and [`Archive::set_entry`]: a location no archive can hold is
+    /// refused here as well, and not answered as the `None` of an archive which does not hold it.
+    /// The archive is unchanged then.
+    pub fn remove_entry(&mut self, location: &str) -> Result<Option<Entry>, OmexError> {
+        let key = normalize_location(location)?;
+        let Some(entry) = self.manifest.remove(&key) else {
+            return Ok(None);
+        };
         self.content.remove(&entry.location);
-        Some(entry)
+        Ok(Some(entry))
     }
 
     /// Write the archive, copying every entry which did not change as the blob it is.

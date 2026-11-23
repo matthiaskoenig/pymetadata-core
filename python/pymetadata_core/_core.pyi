@@ -112,9 +112,12 @@ class Archive:
             location: the location, in any spelling `normalize_location` accepts.
 
         Returns:
-            Whether there was such an entry.
+            Whether there was such an entry. `.` and `./manifest.xml` are required
+            and are never removed, so they report `False`.
 
         Raises:
+            OmexError: for a location outside of the archive, as `set_entry` and
+                `entry_bytes` raise it; the archive is unchanged then.
             ArchiveBusyError: if another thread is using this archive.
         """
 

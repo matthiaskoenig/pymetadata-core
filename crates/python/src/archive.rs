@@ -125,9 +125,13 @@ impl Archive {
     }
 
     /// Remove an entry, and say whether there was one.
+    ///
+    /// A location outside of the archive is an `OmexError`, as it is for `set_entry` and
+    /// `entry_bytes`, and not the `False` of an archive which holds no such entry.
     fn remove_entry(slf: &Bound<'_, Self>, location: &str) -> PyResult<bool> {
         let mut this = slf.try_borrow_mut().map_err(busy)?;
-        Ok(this.inner.remove_entry(location).is_some())
+        let removed = this.inner.remove_entry(location).map_err(to_py_err)?;
+        Ok(removed.is_some())
     }
 
     /// Write the archive.

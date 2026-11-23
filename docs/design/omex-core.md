@@ -130,7 +130,7 @@ impl Archive {
     pub fn entry(&self, location: &str) -> Option<&Entry>;
     pub fn entry_bytes(&mut self, location: &str) -> Result<&[u8], OmexError>;
     pub fn set_entry(&mut self, entry: Entry, bytes: Vec<u8>) -> Result<(), OmexError>;
-    pub fn remove_entry(&mut self, location: &str) -> Option<Entry>;
+    pub fn remove_entry(&mut self, location: &str) -> Result<Option<Entry>, OmexError>;
     pub fn to_bytes(&mut self) -> Result<Vec<u8>, OmexError>;
     pub fn to_bytes_recompressed(&mut self, level: u32) -> Result<Vec<u8>, OmexError>;
 }
@@ -163,7 +163,8 @@ Invariants the core keeps, all of them the ones `pymetadata` keeps today:
 - The manifest always holds `.` with the OMEX format URI and `./manifest.xml`
   with the manifest format URI.
 - An entry outside the archive (`../`) and an absolute location are errors, not
-  silently dropped files.
+  silently dropped files, and they are errors of every call which takes a
+  location: `entry_bytes`, `set_entry` and `remove_entry` alike.
 - A location present in the zip but absent from the manifest is kept and
   listed; this is what real archives from BioModels look like.
 

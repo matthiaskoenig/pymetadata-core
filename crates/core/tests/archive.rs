@@ -189,7 +189,7 @@ fn set_entry_refuses_the_required_entries() {
 fn remove_entry_removes_from_the_manifest_and_the_content() {
     let mut archive = hand_built();
     assert_eq!(
-        archive.remove_entry("model.xml").unwrap().location,
+        archive.remove_entry("model.xml").unwrap().unwrap().location,
         "./model.xml"
     );
     assert!(archive.entry("./model.xml").is_none());
@@ -197,7 +197,7 @@ fn remove_entry_removes_from_the_manifest_and_the_content() {
         archive.entry_bytes("./model.xml"),
         Err(OmexError::NotFound(_))
     ));
-    assert!(archive.remove_entry("./model.xml").is_none());
+    assert!(archive.remove_entry("./model.xml").unwrap().is_none());
 }
 
 /// `.` and the manifest stay.
@@ -205,8 +205,22 @@ fn remove_entry_removes_from_the_manifest_and_the_content() {
 fn remove_entry_refuses_the_required_entries() {
     let mut archive = hand_built();
     let before = archive.manifest().clone();
-    assert!(archive.remove_entry(".").is_none());
-    assert!(archive.remove_entry("./manifest.xml").is_none());
+    assert!(archive.remove_entry(".").unwrap().is_none());
+    assert!(archive.remove_entry("./manifest.xml").unwrap().is_none());
+    assert_eq!(archive.manifest(), &before);
+}
+
+/// A location no archive can hold is refused, as it is by every other call which takes one.
+#[test]
+fn remove_entry_refuses_a_location_outside_of_the_archive() {
+    let mut archive = hand_built();
+    let before = archive.manifest().clone();
+    for location in ["", "/abs.xml", "C:/x.xml", "../x.xml", "a/../b"] {
+        assert!(
+            matches!(archive.remove_entry(location), Err(OmexError::Refused(_))),
+            "{location}"
+        );
+    }
     assert_eq!(archive.manifest(), &before);
 }
 
@@ -260,7 +274,7 @@ fn entry_bytes_of_the_manifest_is_refused() {
     ));
     let entry = Entry::new("./new.txt", "text/plain", false).unwrap();
     archive.set_entry(entry, b"new".to_vec()).unwrap();
-    archive.remove_entry("./extra.txt").unwrap();
+    assert!(archive.remove_entry("./extra.txt").unwrap().is_some());
     assert!(matches!(
         archive.entry_bytes("manifest.xml"),
         Err(OmexError::Refused(_))
@@ -282,7 +296,7 @@ fn set_entry_replaces_an_inflated_member() {
 fn remove_entry_removes_an_inflated_member() {
     let mut archive = hand_built();
     archive.entry_bytes("./extra.txt").unwrap();
-    archive.remove_entry("./extra.txt").unwrap();
+    assert!(archive.remove_entry("./extra.txt").unwrap().is_some());
     assert!(matches!(
         archive.entry_bytes("./extra.txt"),
         Err(OmexError::NotFound(_))

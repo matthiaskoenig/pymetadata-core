@@ -8,7 +8,7 @@
 
 use pymetadata_core::location::suffix;
 use pymetadata_core::wire::{ErrorResponse, ManifestResponse, SetEntryRequest, kind};
-use pymetadata_core::{Archive, Entry, OmexError, guess_format, normalize_location};
+use pymetadata_core::{Archive, Entry, OmexError, guess_format};
 
 /// The kind of a failure of this host which no [`OmexError`] describes.
 ///
@@ -194,17 +194,15 @@ pub fn set_entry(archive: &mut Archive, request: &[u8]) -> Result<Vec<u8>, CallE
 ///
 /// # Errors
 ///
-/// [`OmexError::Malformed`] if the location is no UTF-8, [`OmexError::Refused`] if it is no
-/// location of an archive at all, and [`OmexError::NotFound`] if the archive has no such entry,
-/// which is also what `.` and `./manifest.xml` are: the two entries the specification requires
-/// are not removed. The location is normalized here and not left to
-/// [`Archive::remove_entry`], which answers `None` for a location it cannot normalize, so that
-/// a location outside of the archive is the same refusal here as it is for [`entry`] and
-/// [`set_entry`]. A page which does not care whether there was an entry ignores the return code
-/// of the export.
+/// [`OmexError::Malformed`] if the location is no UTF-8, the errors of
+/// [`Archive::remove_entry`], which is [`OmexError::Refused`] for a location no archive can
+/// hold, and [`OmexError::NotFound`] if the archive has no such entry, which is also what `.`
+/// and `./manifest.xml` are: the two entries the specification requires are not removed. The
+/// archive answers `None` for an entry which was not there and the failure is this call's, so
+/// that a page which does not care whether there was one ignores the return code of the export.
 pub fn remove_entry(archive: &mut Archive, location: &[u8]) -> Result<Vec<u8>, CallError> {
-    let location = normalize_location(location_of(location)?)?;
-    if archive.remove_entry(&location).is_none() {
+    let location = location_of(location)?;
+    if archive.remove_entry(location)?.is_none() {
         return Err(CallError::Core(OmexError::NotFound(format!(
             "no entry at '{location}' to remove"
         ))));

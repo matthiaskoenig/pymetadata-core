@@ -249,7 +249,9 @@ impl Manifest {
     /// Remove the entry for a location and return it.
     ///
     /// `.` and `./manifest.xml` are required and never removed, nor is an unknown location, all
-    /// of which give `None`.
+    /// of which give `None`. A location which cannot be normalized is no location of a manifest
+    /// and gives `None` too; it never reaches here through [`crate::Archive::remove_entry`],
+    /// which refuses it with the error every other call of an archive refuses it with.
     pub fn remove(&mut self, location: &str) -> Option<Entry> {
         let location = normalize_location(location).ok()?;
         if location == ARCHIVE_LOCATION || location == MANIFEST_LOCATION {

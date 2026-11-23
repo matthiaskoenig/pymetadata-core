@@ -58,6 +58,11 @@ def test_bad_locations_are_refused(location: str):
     archive = Archive()
     with pytest.raises(OmexError, match="refused"):
         archive.set_entry(location, "x", False, b"")
+    # not `False`, which is what an archive without such an entry answers
+    with pytest.raises(OmexError, match="refused"):
+        archive.remove_entry(location)
+    with pytest.raises(OmexError, match="refused"):
+        archive.entry_bytes(location)
 
 
 def test_manifest_cannot_be_set():

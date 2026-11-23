@@ -169,7 +169,8 @@ fn set_entry_then_write_produces_a_readable_archive() {
         "not_found"
     );
     // and the two entries the specification requires are not removed, where a location which is
-    // no location of an archive is the refusal it is for every other call
+    // no location of an archive is the refusal the core answers it with, for this call as for
+    // every other one which takes a location
     for location in [&b"."[..], b"./manifest.xml"] {
         assert_eq!(
             calls::remove_entry(&mut archive, location)

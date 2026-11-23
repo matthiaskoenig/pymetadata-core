@@ -352,7 +352,7 @@ fn the_manifest_is_regenerated() {
             b"added".to_vec(),
         )
         .unwrap();
-    archive.remove_entry("./README.md").unwrap();
+    assert!(archive.remove_entry("./README.md").unwrap().is_some());
     let written = archive.to_bytes().unwrap();
     let reader = Reader::new(written.clone()).unwrap();
     let member = reader
