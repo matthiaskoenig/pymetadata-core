@@ -121,7 +121,7 @@ dependencies = [
 
 [[package]]
 name = "pymetadata-core"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "crc32fast",
  "flate2",
@@ -134,7 +134,7 @@ dependencies = [
 
 [[package]]
 name = "pymetadata-python"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "pymetadata-core",
  "pyo3",
@@ -142,7 +142,7 @@ dependencies = [
 
 [[package]]
 name = "pymetadata-wasm"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "pymetadata-core",
  "serde_json",

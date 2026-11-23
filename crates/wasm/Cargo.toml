@@ -21,7 +21,7 @@ name = "pymetadata_wasm"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-pymetadata-core = { path = "../core", version = "0.1.0" }
+pymetadata-core = { path = "../core", version = "0.2.0" }
 serde_json.workspace = true
 
 # `panic-probe` adds one export which panics on purpose, for the test of the JavaScript package

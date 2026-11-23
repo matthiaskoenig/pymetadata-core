@@ -36,12 +36,12 @@ node js/build.mjs
 (cd js && npm test && node prepack.mjs && npm pack --dry-run)
 ```
 
-The python binding is not a default member of the workspace, so it has gates of its own. `uv.lock` pins the development environment, as it does in `pymetadata`: `uv sync --locked` creates it from the lock (and fails instead of re-resolving when the lock no longer matches `pyproject.toml`), builds the extension into it and installs `pytest`, `pymetadata` (the tests cross-check against it) and `ruff`. `uv lock --check` verifies the lock alone. The compiled extension lands in `python/pymetadata_core/` and is gitignored.
+The python binding is not a default member of the workspace, so it has gates of its own. `uv.lock` pins the development environment, as it does in `pymetadata`: `uv sync --locked` creates it from the lock (and fails instead of re-resolving when the lock no longer matches `pyproject.toml`), builds the extension into it and installs `pytest`, `pymetadata` (the tests cross-check against it) and `ruff`. `uv lock --check` verifies the lock alone. The compiled extension lands in `python/pymetadata_core/` and is gitignored. `--reinstall-package pymetadata-core` is there because a plain `uv sync --locked` does not always rebuild the extension, so a local run can pass against a stale `_core` built from older code; a fresh environment, as in continuous integration, needs no such flag.
 
 ```bash
 cargo clippy -p pymetadata-python --locked --all-targets -- -D warnings
 cargo test -p pymetadata-python --locked
-uv sync --locked
+uv sync --locked --reinstall-package pymetadata-core
 uv run --no-sync ruff check
 uv run --no-sync ruff format --check
 uvx ty@0.0.108 check
@@ -59,7 +59,7 @@ uv run --no-sync --with 'maturin>=1.16,<2' maturin build --release --sdist -o ta
 
 The last line builds the source distribution of the release; it takes no `--locked`, since the workspace of an sdist is not the one `Cargo.lock` was resolved for.
 
-Continuous integration (`.github/workflows/ci.yml`) runs exactly these lists as the jobs `checks`, `wasm`, `js`, `python`, `ruff` and `ty`, which are the required checks of `.github/rulesets/develop.json`. How a release is made is in `docs/release.md`.
+Continuous integration (`.github/workflows/ci.yml`) runs these lists as the jobs `checks`, `wasm`, `js`, `python`, `ruff` and `ty`, which are the required checks of `.github/rulesets/develop.json`, except that its python job runs a plain `uv sync --locked`: a fresh environment needs no `--reinstall-package`. How a release is made is in `docs/release.md`.
 
 `crates/core/src/formats_table.rs` and `crates/core/tests/data/formats.json` are generated from `pymetadata.omex` by `scripts/formats_table.py`; run it from a pymetadata checkout with `uv run python`. `crates/core/src/formats.rs` is the hand-written logic over that table.
 
