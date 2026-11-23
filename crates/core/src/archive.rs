@@ -333,6 +333,41 @@ impl Archive {
         Ok(())
     }
 
+    /// Change the format and the master flag of an entry, leaving its bytes alone.
+    ///
+    /// [`Archive::set_entry`] takes the bytes of the entry, so changing only its metadata
+    /// through it means handing the member back, which inflates it and deflates it again for
+    /// a change the member does not carry: the format URI and the master flag live in the
+    /// `manifest.xml` and nowhere else. This call changes the manifest entry alone, so a
+    /// member of the input stays the compressed blob [`Archive::to_bytes`] copies.
+    ///
+    /// The entry keeps its position in the manifest. The location is normalized, as it is for
+    /// every other call which takes one.
+    ///
+    /// # Errors
+    ///
+    /// [`OmexError::Refused`] for a location which cannot be normalized, for `.` and
+    /// `./manifest.xml`, whose entries the specification fixes, and for a format holding text
+    /// XML cannot carry; [`OmexError::NotFound`] if the manifest has no entry at the location,
+    /// since this changes an entry and does not add one. The archive is unchanged then.
+    pub fn set_entry_format(
+        &mut self,
+        location: &str,
+        format: &str,
+        master: bool,
+    ) -> Result<(), OmexError> {
+        let key = normalize_location(location)?;
+        if key == ARCHIVE_LOCATION || key == MANIFEST_LOCATION {
+            return Err(OmexError::Refused(format!(
+                "the entry of '{key}' is the one the specification prescribes"
+            )));
+        }
+        if self.manifest.get(&key).is_none() {
+            return Err(OmexError::NotFound(format!("no entry at '{key}'")));
+        }
+        self.manifest.add(Entry::new(&key, format, master)?)
+    }
+
     /// Remove an entry and its bytes, and return the entry.
     ///
     /// The location is normalized, as it is for every other call which takes one. `.`,

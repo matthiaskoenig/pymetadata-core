@@ -162,6 +162,26 @@ impl Archive {
         .map_err(to_py_err)
     }
 
+    /// Change the format and the master flag of an entry, without touching its bytes.
+    ///
+    /// `set_entry` takes the bytes of the entry, so changing only its metadata through it
+    /// inflates the member and deflates it again. This changes the manifest entry alone, so
+    /// the member stays the compressed blob `to_bytes` copies. The entry keeps its position.
+    ///
+    /// A location the manifest does not list is an `OmexError`, as are `.` and
+    /// `./manifest.xml`, whose entries the specification prescribes.
+    fn set_entry_format(
+        slf: &Bound<'_, Self>,
+        location: &str,
+        format: &str,
+        master: bool,
+    ) -> PyResult<()> {
+        let mut this = slf.try_borrow_mut().map_err(busy)?;
+        this.inner
+            .set_entry_format(location, format, master)
+            .map_err(to_py_err)
+    }
+
     /// Remove an entry, and say whether there was one.
     ///
     /// A location outside of the archive is an `OmexError`, as it is for `set_entry` and

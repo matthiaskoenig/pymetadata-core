@@ -539,3 +539,94 @@ fn a_location_declared_twice_is_declared_twice_and_listed_once() {
     assert_eq!(effective.len(), 1);
     assert!(effective[0].master);
 }
+
+/// A metadata only change leaves the member of the entry the compressed blob it was.
+#[test]
+fn set_entry_format_does_not_recompress_the_member() {
+    let bytes = fixture("CompModels.omex");
+    let source = Archive::from_bytes(&bytes).unwrap();
+    let before: Vec<_> = source.members().to_vec();
+    let mut archive = Archive::from_bytes(&bytes).unwrap();
+    let target = archive
+        .locations()
+        .find(|location| location.ends_with(".xml") && *location != "./manifest.xml")
+        .unwrap()
+        .to_string();
+    archive
+        .set_entry_format(
+            &target,
+            "http://purl.org/NET/mediatypes/application/xml",
+            true,
+        )
+        .unwrap();
+    let entry = archive.entry(&target).unwrap();
+    assert_eq!(
+        entry.format,
+        "http://purl.org/NET/mediatypes/application/xml"
+    );
+    assert!(entry.master);
+    let written = archive.to_bytes().unwrap();
+    let result = Archive::from_bytes(&written).unwrap();
+    for member in &before {
+        if member.location == "./manifest.xml" {
+            continue;
+        }
+        let after = result
+            .members()
+            .iter()
+            .find(|candidate| candidate.location == member.location)
+            .unwrap_or_else(|| panic!("member {} is gone", member.location))
+            .clone();
+        assert_eq!(
+            (after.method, after.compressed_size),
+            (member.method, member.compressed_size),
+            "member {} was recompressed",
+            member.location
+        );
+    }
+    assert_eq!(
+        result.entry(&target).unwrap().format,
+        "http://purl.org/NET/mediatypes/application/xml",
+        "the written manifest carries the new format"
+    );
+    assert!(result.entry(&target).unwrap().master);
+}
+
+/// The entry keeps the place it had in the manifest.
+#[test]
+fn set_entry_format_keeps_the_position_of_the_entry() {
+    let mut archive = Archive::from_bytes(&fixture("CompModels.omex")).unwrap();
+    let before: Vec<String> = archive.locations().map(str::to_string).collect();
+    let target = before
+        .iter()
+        .find(|location| location.ends_with(".xml") && *location != "./manifest.xml")
+        .unwrap()
+        .clone();
+    archive
+        .set_entry_format(&target, "text/plain", false)
+        .unwrap();
+    let after: Vec<String> = archive.locations().map(str::to_string).collect();
+    assert_eq!(before, after);
+}
+
+/// The two entries the specification prescribes are not changed through this call.
+#[test]
+fn set_entry_format_refuses_the_derived_locations() {
+    let mut archive = Archive::from_bytes(&fixture("CompModels.omex")).unwrap();
+    for location in [".", "./manifest.xml", "manifest.xml"] {
+        let error = archive.set_entry_format(location, "text/plain", false);
+        assert!(
+            matches!(error, Err(OmexError::Refused(_))),
+            "{location}: {error:?}"
+        );
+    }
+}
+
+/// A location the manifest does not list is not added by a metadata change.
+#[test]
+fn set_entry_format_reports_an_unknown_location_as_not_found() {
+    let mut archive = Archive::from_bytes(&fixture("CompModels.omex")).unwrap();
+    let error = archive.set_entry_format("./nothing.xml", "text/plain", false);
+    assert!(matches!(error, Err(OmexError::NotFound(_))), "{error:?}");
+    assert!(archive.entry("./nothing.xml").is_none());
+}

@@ -147,6 +147,28 @@ class Archive:
             ArchiveBusyError: if another thread is using this archive.
         """
 
+    def set_entry_format(self, location: str, format: str, master: bool) -> None:
+        """Change the format and the master flag of an entry, leaving its bytes alone.
+
+        `set_entry` takes the bytes of the entry, so changing only its metadata through
+        it inflates the member and deflates it again, for a change the member does not
+        carry. This changes the manifest entry alone, so a member of the container stays
+        the compressed blob `to_bytes` copies, and the entry keeps its position in the
+        manifest.
+
+        Args:
+            location: the location of an entry the manifest lists, normalized.
+            format: the format URI, see `lookup_format` and `guess_format`.
+            master: whether a tool should open the entry first.
+
+        Raises:
+            OmexError: if the manifest has no entry at the location, since this changes
+                an entry and does not add one, for a location outside of the archive and
+                for `.` and `./manifest.xml`, whose entries the specification prescribes;
+                the archive is unchanged then.
+            ArchiveBusyError: if another thread is using this archive.
+        """
+
     def remove_entry(self, location: str) -> bool:
         """Remove an entry.
 

@@ -294,3 +294,50 @@ def test_the_stub_declares_members_and_has_bytes():
         assert f"@property\n    def {name}(" in stub
     assert list(inspect.signature(Archive.has_bytes).parameters) == ["self", "location"]
     assert "def has_bytes(self, location: str) -> bool:" in stub
+
+
+def test_set_entry_format_changes_the_manifest_and_copies_the_member(
+    archive_path: Path,
+) -> None:
+    """A metadata only change does not recompress the member it describes."""
+    data = archive_path.read_bytes()
+    before = {
+        member.filename: (member.compress_type, member.compress_size, member.CRC)
+        for member in zipfile.ZipFile(io.BytesIO(data)).infolist()
+        if not member.is_dir()
+    }
+    archive = Archive.from_bytes(data)
+    target = next(
+        location
+        for location, _, _ in archive.entries
+        if location.endswith(".xml") and location != MANIFEST
+    )
+    archive.set_entry_format(target, lookup_format("txt"), True)
+    assert (target, lookup_format("txt"), True) in archive.entries
+    written = zipfile.ZipFile(io.BytesIO(archive.to_bytes()))
+    for member in written.infolist():
+        name = member.filename
+        if name == "manifest.xml" or name not in before:
+            continue
+        assert (member.compress_type, member.compress_size, member.CRC) == before[
+            name
+        ], f"{name} was rewritten"
+    assert f'format="{lookup_format("txt")}"' in archive.manifest_xml()
+
+
+def test_set_entry_format_refuses_what_it_cannot_change() -> None:
+    """An unknown location is refused, as are the two prescribed entries."""
+    archive = Archive.from_bytes(ARCHIVES[2].read_bytes())
+    for location in (".", MANIFEST, "manifest.xml", "./nothing.xml"):
+        with pytest.raises(OmexError):
+            archive.set_entry_format(location, lookup_format("txt"), False)
+    assert archive.entry_bytes  # the archive is still usable
+    assert "./nothing.xml" not in [location for location, _, _ in archive.entries]
+
+
+def test_set_entry_format_keeps_the_order_of_the_entries() -> None:
+    """The entry stays where it was in the manifest."""
+    archive = Archive.from_bytes(ARCHIVES[2].read_bytes())
+    before = [location for location, _, _ in archive.entries]
+    archive.set_entry_format(before[-1], lookup_format("txt"), False)
+    assert [location for location, _, _ in archive.entries] == before
