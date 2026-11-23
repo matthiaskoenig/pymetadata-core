@@ -1,0 +1,33 @@
+[workspace]
+resolver = "2"
+# `crates/python` and `crates/wasm` are added by the tasks which create them.
+members = ["crates/core"]
+# `pymetadata-python` will be a member but not a default one. pyo3 refuses to build against an
+# interpreter older than its abi3 floor, so a crate in the default set would make a newer python
+# toolchain the price of `cargo test` on the core, for a binding most contributors never touch,
+# and that price is a hard build error and not a skipped crate. The crates in this list are what
+# `cargo test`, `cargo clippy` and `cargo doc` take without a `-p`; the binding is built
+# deliberately, with `-p pymetadata-python`. `--workspace` overrides this list and does reach it,
+# which is why the wasm checks exclude it by name.
+default-members = ["crates/core"]
+# the throwaway package of the spike sits at the repository root and is not a member
+exclude = ["spike"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.100"
+license = "MIT"
+authors = ["Matthias König"]
+repository = "https://github.com/matthiaskoenig/pymetadata-core"
+readme = "README.md"
+keywords = ["combine", "omex", "sbml", "sedml", "wasm"]
+categories = ["science", "wasm"]
+
+# every public item carries a doc comment, as a gate rather than a convention
+[workspace.lints.rust]
+missing_docs = "warn"
+
+[workspace.dependencies]
+thiserror = "2"
+serde_json = "1"
