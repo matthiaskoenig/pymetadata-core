@@ -356,3 +356,186 @@ fn set_max_inflated_size_limits_a_member() {
     archive.set_max_inflated_size(100);
     assert_eq!(archive.entry_bytes("./extra.txt").unwrap(), b"extra");
 }
+
+#[test]
+fn members_are_the_zip_members_in_order_with_their_sizes() {
+    let archive = Archive::from_bytes(&fixture("iCGB21FR.omex")).unwrap();
+    let members = archive.members();
+    assert_eq!(members.len(), 22);
+    assert_eq!(members[0].location, "./manifest.xml");
+    assert!(members.iter().all(|m| m.location.starts_with("./")));
+    assert!(
+        members
+            .iter()
+            .any(|m| m.location == "./__MACOSX/._manifest.xml")
+    );
+    assert!(
+        members
+            .iter()
+            .filter(|m| m.method == 8)
+            .all(|m| m.compressed_size > 0)
+    );
+}
+
+#[test]
+fn members_of_an_archive_built_from_nothing_are_empty() {
+    assert!(Archive::new().members().is_empty());
+}
+
+#[test]
+fn has_bytes_is_false_for_a_manifest_entry_without_a_member() {
+    let archive = Archive::from_bytes(&fixture("iCGB21FR.omex")).unwrap();
+    assert!(archive.entry("./iCGB21FR_memote.html").is_some());
+    assert!(!archive.has_bytes("./iCGB21FR_memote.html").unwrap());
+    assert!(archive.has_bytes("iCGB21FR.xml").unwrap());
+}
+
+#[test]
+fn has_bytes_is_true_after_set_entry_on_an_archive_built_from_nothing() {
+    let mut archive = Archive::new();
+    let entry = Entry {
+        location: "./a.txt".to_string(),
+        format: guess_format("txt", &[]).to_string(),
+        master: false,
+    };
+    archive.set_entry(entry, b"x".to_vec()).unwrap();
+    assert!(archive.has_bytes("a.txt").unwrap());
+    assert!(archive.members().is_empty());
+}
+
+#[test]
+fn has_bytes_refuses_a_location_outside_of_the_archive() {
+    assert!(matches!(
+        Archive::new().has_bytes("../x"),
+        Err(OmexError::Refused(_))
+    ));
+}
+
+#[test]
+fn has_bytes_is_false_for_the_derived_locations() {
+    let archive = Archive::from_bytes(&fixture("iCGB21FR.omex")).unwrap();
+    assert!(!archive.has_bytes(".").unwrap());
+    assert!(!archive.has_bytes("./manifest.xml").unwrap());
+}
+
+#[test]
+fn a_duplicate_member_name_appears_once_per_member() {
+    let bytes = stored_zip(&[
+        ("manifest.xml", MANIFEST),
+        ("a.txt", b"one"),
+        ("a.txt", b"two"),
+    ]);
+    let mut archive = Archive::from_bytes(&bytes).unwrap();
+    let members = archive.members();
+    let a: Vec<_> = members.iter().filter(|m| m.location == "./a.txt").collect();
+    assert_eq!(a.len(), 2);
+    assert!(archive.has_bytes("a.txt").unwrap());
+    assert_eq!(archive.entry_bytes("a.txt").unwrap(), b"two");
+}
+
+#[test]
+fn has_bytes_follows_remove_entry_while_members_does_not_shrink() {
+    let mut archive = Archive::from_bytes(&fixture("iCGB21FR.omex")).unwrap();
+    let before = archive.members();
+    assert!(archive.has_bytes("./iCGB21FR.xml").unwrap());
+    archive.remove_entry("./iCGB21FR.xml").unwrap();
+    assert!(!archive.has_bytes("./iCGB21FR.xml").unwrap());
+    assert_eq!(archive.members(), before);
+    // a member the manifest did not list was added to it on opening, so it is the same
+    let unlisted = "./__MACOSX/._manifest.xml";
+    assert!(archive.has_bytes(unlisted).unwrap());
+    archive.remove_entry(unlisted).unwrap();
+    assert!(!archive.has_bytes(unlisted).unwrap());
+}
+
+#[test]
+fn declared_entries_are_the_manifest_of_the_container_without_the_invented_ones() {
+    let bytes = fixture("iCGB21FR.omex");
+    let archive = Archive::from_bytes(&bytes).unwrap();
+    let declared: Vec<&str> = archive
+        .declared_entries()
+        .iter()
+        .map(|e| e.location.as_str())
+        .collect();
+    // the expectation is read from the manifest text with a crude split, deliberately not with
+    // `Manifest::parse`, which would check the parser against itself
+    let zip = zip_manifest(&bytes);
+    let expected: Vec<String> = zip
+        .split("location=\"")
+        .skip(1)
+        .map(|rest| {
+            let location = rest.split('"').next().unwrap();
+            pymetadata_core::normalize_location(location).unwrap()
+        })
+        .collect();
+    assert_eq!(declared, expected);
+    assert!(declared.contains(&"./iCGB21FR_memote.html"));
+    assert!(!declared.contains(&"./__MACOSX/._manifest.xml"));
+    assert!(declared.len() < archive.manifest().entries().len());
+}
+
+/// The text of the `manifest.xml` of an archive, read through the zip reader.
+fn zip_manifest(bytes: &[u8]) -> String {
+    let reader = pymetadata_core::zip::Reader::new(bytes.to_vec()).unwrap();
+    let member = reader
+        .members()
+        .iter()
+        .find(|m| m.name == "manifest.xml")
+        .unwrap();
+    String::from_utf8(reader.inflate(member).unwrap()).unwrap()
+}
+
+#[test]
+fn declared_entries_do_not_prepend_the_required_entries() {
+    let archive = Archive::from_bytes(&fixture("BIOMD0000000001.omex")).unwrap();
+    let declared = archive.declared_entries();
+    assert!(
+        declared
+            .iter()
+            .all(|e| e.location != "." && e.location != "./manifest.xml")
+    );
+    let text = zip_manifest(&fixture("BIOMD0000000001.omex"));
+    assert_eq!(declared.len(), text.matches("<content ").count());
+    let entries = archive.manifest().entries();
+    assert!(entries.iter().any(|e| e.location == "."));
+    assert!(entries.iter().any(|e| e.location == "./manifest.xml"));
+}
+
+#[test]
+fn declared_entries_are_unchanged_by_set_entry_and_remove_entry() {
+    let mut archive = Archive::from_bytes(&fixture("iCGB21FR.omex")).unwrap();
+    let before = archive.declared_entries().to_vec();
+    let entry = Entry {
+        location: "./new.txt".to_string(),
+        format: guess_format("txt", &[]).to_string(),
+        master: false,
+    };
+    archive.set_entry(entry, b"x".to_vec()).unwrap();
+    archive.remove_entry("./iCGB21FR.xml").unwrap();
+    assert_eq!(archive.declared_entries(), before.as_slice());
+}
+
+#[test]
+fn declared_entries_of_an_archive_built_from_nothing_are_empty() {
+    assert!(Archive::new().declared_entries().is_empty());
+}
+
+#[test]
+fn a_location_declared_twice_is_declared_twice_and_listed_once() {
+    let manifest = br#"<?xml version="1.0"?>
+<omexManifest xmlns="http://identifiers.org/combine.specifications/omex-manifest">
+  <content location="./model.xml" format="http://identifiers.org/combine.specifications/sbml" master="false"/>
+  <content location="model.xml" format="http://identifiers.org/combine.specifications/sbml" master="true"/>
+</omexManifest>"#;
+    let bytes = stored_zip(&[("manifest.xml", manifest), ("model.xml", b"<sbml/>")]);
+    let archive = Archive::from_bytes(&bytes).unwrap();
+    assert_eq!(archive.declared_entries().len(), 2);
+    let effective: Vec<_> = archive
+        .manifest()
+        .entries()
+        .iter()
+        .filter(|e| e.location == "./model.xml")
+        .collect();
+    assert_eq!(effective.len(), 1);
+    assert!(effective[0].master);
+}

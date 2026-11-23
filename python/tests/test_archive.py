@@ -228,3 +228,69 @@ def test_guess_format_head_defaults_to_empty():
 def test_repr_names_the_number_of_entries():
     """A bare `<Archive object at 0x...>` says nothing in a traceback, the count does."""
     assert repr(Archive()) == "Archive(2 entries)"
+
+
+def test_members_are_tuples_whose_first_element_is_the_location():
+    """The members of the container are `(location, compressed, uncompressed, method)`."""
+    source = ARCHIVES[-1].read_bytes()
+    archive = Archive.from_bytes(source)
+    members = archive.members
+    assert isinstance(members, list)
+    assert all(isinstance(member, tuple) and len(member) == 4 for member in members)
+    with zipfile.ZipFile(io.BytesIO(source)) as zf:
+        infos = [info for info in zf.infolist() if not info.is_dir()]
+    assert [m[0] for m in members] == [f"./{info.filename}" for info in infos]
+    assert [m[1:] for m in members] == [
+        (info.compress_size, info.file_size, info.compress_type) for info in infos
+    ]
+
+
+def test_members_are_empty_for_a_new_archive_and_ignore_set_entry():
+    """`members` describes the source container, `has_bytes` sees the staged content."""
+    archive = Archive()
+    assert archive.members == []
+    archive.set_entry("a.txt", lookup_format("txt"), False, b"x")
+    assert archive.members == []
+    assert archive.has_bytes("a.txt")
+
+
+def test_has_bytes_is_false_for_a_listed_entry_without_a_member():
+    """`./iCGB21FR_memote.html` is listed by the manifest and no member provides it."""
+    archive = Archive.from_bytes(ARCHIVES[-1].read_bytes())
+    assert "./iCGB21FR_memote.html" in [e[0] for e in archive.entries]
+    assert archive.has_bytes("./iCGB21FR_memote.html") is False
+    assert archive.has_bytes("iCGB21FR.xml") is True
+    assert archive.has_bytes(".") is False
+    assert archive.has_bytes(MANIFEST) is False
+
+
+def test_has_bytes_refuses_a_location_outside_of_the_archive():
+    """A location which cannot be normalized is an `OmexError`, as for `entry_bytes`."""
+    with pytest.raises(OmexError):
+        Archive().has_bytes("../x")
+
+
+def test_declared_entries_are_the_manifest_without_the_invented_ones():
+    """The declared entries are a strict subset of `entries`, without the junk members."""
+    archive = Archive.from_bytes(ARCHIVES[-1].read_bytes())
+    declared = [location for location, _, _ in archive.declared_entries]
+    entries = [location for location, _, _ in archive.entries]
+    assert set(declared) < set(entries)
+    assert "./iCGB21FR_memote.html" in declared
+    assert not any(
+        "__MACOSX" in location or ".DS_Store" in location for location in declared
+    )
+    assert all(len(entry) == 3 for entry in archive.declared_entries)
+    archive.set_entry("new.txt", lookup_format("txt"), False, b"x")
+    assert [e[0] for e in archive.declared_entries] == declared
+    assert Archive().declared_entries == []
+
+
+def test_the_stub_declares_members_and_has_bytes():
+    """The stub names what the runtime has."""
+    stub = (Path(__file__).parent.parent / "pymetadata_core" / "_core.pyi").read_text()
+    for name in ("members", "declared_entries"):
+        assert type(getattr(Archive, name)).__name__ == "getset_descriptor"
+        assert f"@property\n    def {name}(" in stub
+    assert list(inspect.signature(Archive.has_bytes).parameters) == ["self", "location"]
+    assert "def has_bytes(self, location: str) -> bool:" in stub
