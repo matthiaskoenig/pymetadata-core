@@ -86,6 +86,44 @@ impl Archive {
             .collect())
     }
 
+    /// The entries the `manifest.xml` of the source container declared, as
+    /// `(location, format, master)` in document order, without the entries invented for
+    /// unlisted members. A location declared twice is listed twice. Fixed on opening, so
+    /// `set_entry` and `remove_entry` do not change it; empty for an archive built from
+    /// nothing.
+    #[getter]
+    fn declared_entries(slf: &Bound<'_, Self>) -> PyResult<Vec<(String, String, bool)>> {
+        let this = slf.try_borrow().map_err(busy)?;
+        Ok(this
+            .inner
+            .declared_entries()
+            .iter()
+            .map(|entry| (entry.location.clone(), entry.format.clone(), entry.master))
+            .collect())
+    }
+
+    /// The members of the source container as
+    /// `(location, compressed size, uncompressed size, method)`, in zip order.
+    ///
+    /// Nothing is inflated. It is empty for an archive built from nothing and does not change
+    /// with `set_entry`.
+    #[getter]
+    fn members(slf: &Bound<'_, Self>) -> PyResult<Vec<(String, u64, u64, u16)>> {
+        let this = slf.try_borrow().map_err(busy)?;
+        Ok(this
+            .inner
+            .members()
+            .into_iter()
+            .map(|m| (m.location, m.compressed_size, m.uncompressed_size, m.method))
+            .collect())
+    }
+
+    /// Whether the location has bytes, in the source container or from `set_entry`.
+    fn has_bytes(slf: &Bound<'_, Self>, location: &str) -> PyResult<bool> {
+        let this = slf.try_borrow().map_err(busy)?;
+        this.inner.has_bytes(location).map_err(to_py_err)
+    }
+
     /// The `manifest.xml` the archive is written with.
     fn manifest_xml(slf: &Bound<'_, Self>) -> PyResult<String> {
         let this = slf.try_borrow().map_err(busy)?;

@@ -191,6 +191,11 @@ class Archive:
     def from_bytes(data: bytes, password: bytes | None = None) -> Archive: ...
     @property
     def entries(self) -> list[tuple[str, str, bool]]: ...  # location, format, master
+    @property
+    def members(self) -> list[tuple[str, int, int, int]]: ...  # see below
+    @property
+    def declared_entries(self) -> list[tuple[str, str, bool]]: ...  # see below
+    def has_bytes(self, location: str) -> bool: ...
     def manifest_xml(self) -> str: ...
     def entry_bytes(self, location: str) -> bytes: ...
     def set_entry(
@@ -204,6 +209,30 @@ def normalize_location(location: str) -> str: ...
 def guess_format(suffix: str, head: bytes = b"") -> str: ...
 def lookup_format(format_key: str) -> str: ...
 ```
+
+`members` is the cheap view of the source container: one tuple per non directory
+member of the zip, in central directory order, with the normalized location, the
+compressed and uncompressed size and the raw zip method number (0 stored, 8
+deflate), read from the central directory without inflating or copying a byte.
+It describes the container and nothing else: it is empty for `Archive()` and it
+does not grow when `set_entry` stages content. `has_bytes(location)` is the
+per-entry question which sees staged content: true for a member of the container
+or a `set_entry`, false for a listed entry no member provides and for `.` and
+`./manifest.xml`, and `OmexError` (refused) for a location outside of the
+archive. Together they let `pymetadata` tell a dangling entry from a member, and
+find the members the manifest does not list, without `entry_bytes` inflating.
+
+`declared_entries` is the manifest as the container's `manifest.xml` declared it:
+one tuple per `content` element in document order, with no entry invented for a
+member the manifest does not list, no required entry prepended, and an entry
+without a member kept. It is parsed once when the archive is opened and does not
+change with `set_entry` or `remove_entry`; it is empty for `Archive()`. A
+location the manifest declares twice is listed twice, as parsed, while `entries`
+holds it once, the last declaration winning. A host
+needs it next to `entries` because `entries` is the effective manifest, in which
+a declared entry cannot be told from an invented one, and `./manifest.xml` is
+never readable as bytes; `pymetadata` orders the declared entries first, in the
+manifest's order, and the undeclared members after them, sorted.
 
 Errors from the core are raised as `pymetadata_core.OmexError`, a subclass of
 `ValueError`, so a caller which catches `ValueError` today keeps working.
@@ -294,7 +323,7 @@ message of its own, the output buffer still holds whatever the call before it
 wrote, and the instance is spent: the loader instantiates a new one rather than
 calling into it again.
 
-Four more differences between the two hosts, all of them of the export list and
+Five more differences between the two hosts, all of them of the export list and
 none of them of the core, which `js/README.md` states for a page as well:
 
 - `omex_set_entry` guesses an absent `format` from the suffix of the location
@@ -304,6 +333,8 @@ none of them of the core, which `js/README.md` states for a page as well:
 - There is no export for the bytes of `manifest.xml`: they are written from the
   entries, so `omex_manifest` is how a page reads the manifest, where python
   also has `manifest_xml()`.
+- `Archive.members`, `Archive.declared_entries` and `Archive.has_bytes` are
+  python-only in 0.2.0; the wasm host does not export them.
 - `normalize_location` and `lookup_format` are python-only. A page which needs
   a format URI by name carries the table itself.
 - `omex_remove_entry` answers `not_found` for an entry which was not there,

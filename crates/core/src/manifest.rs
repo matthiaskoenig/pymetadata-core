@@ -141,6 +141,12 @@ impl Manifest {
     /// a `content` element lacks its `location` or `format` or has a `master` which is not a
     /// boolean; [`OmexError::Refused`] for a location outside of the archive.
     pub fn parse(xml: &str) -> Result<Self, OmexError> {
+        Ok(Self::from_declared(Self::parse_declared(xml)?))
+    }
+
+    /// The entries of a `manifest.xml` as the document declares them, one per `content`
+    /// element in document order, with the errors of [`Manifest::parse`].
+    pub(crate) fn parse_declared(xml: &str) -> Result<Vec<Entry>, OmexError> {
         let document = roxmltree::Document::parse(xml)
             .map_err(|e| OmexError::Malformed(format!("manifest is not valid XML: {e}")))?;
         let root = document.root_element();
@@ -168,6 +174,11 @@ impl Manifest {
                     .map_or(Ok(false), parse_master)?,
             )?);
         }
+        Ok(parsed)
+    }
+
+    /// The manifest of declared entries, with the two required ones first when they are missing.
+    pub(crate) fn from_declared(parsed: Vec<Entry>) -> Self {
         let mut manifest = Manifest {
             entries: Vec::new(),
             index: HashMap::new(),
@@ -183,7 +194,7 @@ impl Manifest {
         for entry in parsed {
             manifest.insert(entry);
         }
-        Ok(manifest)
+        manifest
     }
 
     /// Serialize the manifest to the content of a `manifest.xml`.

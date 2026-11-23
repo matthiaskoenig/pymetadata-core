@@ -39,6 +39,21 @@ enum Content {
     Replaced(Vec<u8>),
 }
 
+/// A member of the source container of an archive, as its central directory describes it.
+///
+/// See [`Archive::members`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MemberInfo {
+    /// The normalized location of the member, `./` and its name.
+    pub location: String,
+    /// The number of bytes the member occupies in the container.
+    pub compressed_size: u64,
+    /// The number of bytes the member holds uncompressed.
+    pub uncompressed_size: u64,
+    /// The raw zip compression method: 0 stored, 8 deflate.
+    pub method: u16,
+}
+
 /// A COMBINE archive which reads lazily and edits in memory.
 ///
 /// Opening an archive reads the central directory of the zip and inflates the
@@ -50,6 +65,8 @@ pub struct Archive {
     reader: Option<Reader>,
     /// The entries in order.
     manifest: Manifest,
+    /// The entries the `manifest.xml` of the container declared, as parsed on opening.
+    declared: Vec<Entry>,
     /// The bytes of every entry which has some, by normalized location.
     content: HashMap<String, Content>,
     /// How many members were inflated, which a test reads to see that nothing inflates twice.
@@ -80,6 +97,7 @@ impl Archive {
         Self {
             reader: None,
             manifest: Manifest::default(),
+            declared: Vec::new(),
             content: HashMap::new(),
             #[cfg(test)]
             inflations: 0,
@@ -132,6 +150,7 @@ impl Archive {
         let mut archive = Self {
             reader: Some(reader),
             manifest: Manifest::default(),
+            declared: Vec::new(),
             content,
             #[cfg(test)]
             inflations: 0,
@@ -144,7 +163,8 @@ impl Archive {
         let xml = archive.inflate_member(index)?;
         let xml = std::str::from_utf8(&xml)
             .map_err(|e| OmexError::Malformed(format!("manifest.xml is not UTF-8: {e}")))?;
-        archive.manifest = Manifest::parse(xml)?;
+        archive.declared = Manifest::parse_declared(xml)?;
+        archive.manifest = Manifest::from_declared(archive.declared.clone());
         let mut unlisted: Vec<&String> = archive
             .content
             .keys()
@@ -226,6 +246,70 @@ impl Archive {
                 "no entry with bytes at '{key}'"
             ))),
         }
+    }
+
+    /// The entries the `manifest.xml` of the source container declared, exactly as it did.
+    ///
+    /// One per `content` element in document order. Unlike [`Archive::manifest`] there is no
+    /// entry invented for a member the manifest does not list, no required entry prepended
+    /// when the document lacks it, and an entry without a member is still there. It is fixed
+    /// when the archive is opened: [`Archive::set_entry`] and [`Archive::remove_entry`] do not
+    /// change it. A location the manifest declares twice is declared twice here, as parsed,
+    /// while [`Archive::manifest`] holds it once, the last declaration winning. Empty for an
+    /// archive built with [`Archive::new`].
+    pub fn declared_entries(&self) -> &[Entry] {
+        &self.declared
+    }
+
+    /// The members of the source container, in the order of its central directory.
+    ///
+    /// This describes the container the archive was opened from and nothing else: it is
+    /// empty for an archive built with [`Archive::new`], and it does not grow when
+    /// [`Archive::set_entry`] stages content, nor shrink on [`Archive::remove_entry`]. Use
+    /// [`Archive::has_bytes`] to ask about the content as it is now. A member the manifest
+    /// does not list is in here, `./manifest.xml` is, and a directory member and `.` are not.
+    /// A name which occurs twice in the container appears once per member, in zip order, while
+    /// the archive holds the bytes of the later one.
+    ///
+    /// Nothing is inflated and no member bytes are copied: the central directory was parsed
+    /// when the archive was opened, and the one allocation is the returned `Vec`.
+    pub fn members(&self) -> Vec<MemberInfo> {
+        let Some(reader) = self.reader.as_ref() else {
+            return Vec::new();
+        };
+        reader
+            .members()
+            .iter()
+            .filter(|member| !member.name.ends_with('/'))
+            .filter_map(|member| {
+                let location = normalize_location(&member.name)
+                    .expect("from_bytes rejected every member name which does not normalize");
+                (location != ARCHIVE_LOCATION).then_some(MemberInfo {
+                    location,
+                    compressed_size: member.compressed_size,
+                    uncompressed_size: member.uncompressed_size,
+                    method: member.method,
+                })
+            })
+            .collect()
+    }
+
+    /// Whether the location has bytes, in the source container or from [`Archive::set_entry`],
+    /// without inflating anything.
+    ///
+    /// This is `false` for an entry the manifest lists and no member provides, and for `.` and
+    /// `./manifest.xml`, which hold no content in this core. It follows [`Archive::remove_entry`]:
+    /// a removed entry has no bytes, although [`Archive::members`] still lists its member. A
+    /// member the manifest did not list was added to the manifest when the archive was opened,
+    /// so removing it is the same.
+    ///
+    /// # Errors
+    ///
+    /// [`OmexError::Refused`] for a location which cannot be normalized, as for
+    /// [`Archive::entry_bytes`] and [`Archive::set_entry`].
+    pub fn has_bytes(&self, location: &str) -> Result<bool, OmexError> {
+        let key = normalize_location(location)?;
+        Ok(self.content.contains_key(&key))
     }
 
     /// Add an entry with its bytes, or replace the entry of the same location.

@@ -9,7 +9,7 @@ pub mod manifest;
 pub mod wire;
 pub mod zip;
 
-pub use archive::Archive;
+pub use archive::{Archive, MemberInfo};
 pub use error::OmexError;
 pub use formats::{UNKNOWN_FORMAT, guess_format, lookup_format};
 pub use location::normalize_location;

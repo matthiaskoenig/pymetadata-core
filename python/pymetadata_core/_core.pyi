@@ -60,6 +60,48 @@ class Archive:
             ArchiveBusyError: if another thread is using this archive.
         """
 
+    @property
+    def declared_entries(self) -> list[tuple[str, str, bool]]:
+        """The entries the `manifest.xml` of the source container declared.
+
+        Each is `(location, format, master)`, in document order, exactly as declared: no
+        entry for a member the manifest does not list, no required entry added, and an
+        entry without a member is kept. It is fixed when the archive is opened and does not
+        change with `set_entry` or `remove_entry`. A location the manifest declares twice
+        is listed twice, as parsed, while `entries` holds it once, the last declaration
+        winning. It is empty for `Archive()`.
+
+        Raises:
+            ArchiveBusyError: if another thread is using this archive.
+        """
+
+    @property
+    def members(self) -> list[tuple[str, int, int, int]]:
+        """The members of the source container, in zip order.
+
+        Each is `(location, compressed size, uncompressed size, method)`, with the raw zip
+        method number (0 stored, 8 deflate). Nothing is inflated. This describes the
+        container the archive was opened from: it is empty for `Archive()` and does not
+        change with `set_entry`. Use `has_bytes` for the content as it is now.
+
+        Raises:
+            ArchiveBusyError: if another thread is using this archive.
+        """
+
+    def has_bytes(self, location: str) -> bool:
+        """Return whether the location has bytes, from the container or `set_entry`.
+
+        Nothing is inflated. It is `False` for a listed entry no member provides, and for
+        `.` and `./manifest.xml`.
+
+        Args:
+            location: the location, in any spelling `normalize_location` accepts.
+
+        Raises:
+            OmexError: if the location is outside of the archive.
+            ArchiveBusyError: if another thread is using this archive.
+        """
+
     def __repr__(self) -> str:
         """Return the number of entries, e.g. `Archive(2 entries)`.
 
