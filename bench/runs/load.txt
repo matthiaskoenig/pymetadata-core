@@ -1,0 +1,17 @@
+run 1 load 9.15 9.30 8.22
+run 1 end load 10.24 8.76 8.10
+run 2 load 10.24 8.76 8.10
+run 2 end load 3.32 6.68 7.41
+run 3 load 3.32 6.68 7.41
+run 3 end load 1.90 5.17 6.78
+run 4 load 1.90 5.17 6.78
+run 4 end load 2.56 4.40 6.32
+run 5 load 2.56 4.40 6.32
+run 5 end load 2.75 3.82 5.88
+done
+rust rerun 1 load 9.68 5.46 5.60
+rust rerun 2 load 8.52 5.48 5.60
+rust rerun 3 load 6.38 5.19 5.50
+rust rerun 4 load 5.68 5.10 5.46
+rust rerun 5 load 10.55 6.16 5.80
+rust rerun end load 10.61 6.61 5.96

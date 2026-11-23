@@ -8,15 +8,19 @@
 ## Why
 
 `pymetadata.omex` is used wherever a COMBINE archive is read or written, in
-pipelines and in frontends. Two numbers from the spike decide the design
-(1.4 MB archive, 8 entries):
+pipelines and in frontends. Two measured results decide the design
+(`BENCHMARKS.md`, 1.4 MB archive, fastest of 5 runs on a shared machine):
 
-- `Omex.to_omex` costs 234 ms, because python re-deflates every entry on
+- `Omex.to_omex` costs 230 ms, because python re-deflates every entry on
   every write. A Rust writer which copies the untouched entries as
-  still-compressed blobs costs 0.12 ms.
-- Reading only `manifest.xml` costs 155 microseconds in python and 14 in
-  Rust, and listing the contents of an archive is the request a frontend
-  makes most.
+  still-compressed blobs costs 0.15 ms, including opening the archive
+  (1520x). When both sides deflate every entry the core is 1.6x to 2.0x
+  faster, so the gain is the copy and not the deflate.
+- Reading only `manifest.xml` costs 197 microseconds in python and 78 in
+  Rust through `Archive::from_bytes`, which copies its input (2.5x). A
+  floor of 12 microseconds (17x) skips the copy and the pass which adds the
+  members the manifest does not list; it is not an API call. Listing the
+  contents of an archive is the request a frontend makes most.
 
 A browser has no python at all, so the same core has to run as WebAssembly.
 
@@ -303,12 +307,13 @@ and sharding it over workers has no meaning.
 ## Benchmarks
 
 Not a gate, as in the siblings. `crates/core/examples/omex_timing.rs` times
-the six archives of `pymetadata/tests/data/omex/` with the protocol of the
+the four archives of `pymetadata/tests/data/omex/` with the protocol of the
 spike (3 warm-up calls, 3 rounds of 20 calls, median of the round medians,
-a checksum per cell), `scripts/python_timing.py` repeats it against the
-installed `pymetadata`, and `BENCHMARKS.md` holds the comparison with the
-spike numbers as its first row. `bench/RESULTS.md` holds the node and Chrome
-table, produced by `node js/bench.mjs` and `js/bench.html`.
+a checksum per cell, then the fastest of 5 runs), `scripts/python_timing.py`
+repeats it against the installed `pymetadata`, and `BENCHMARKS.md` holds the
+comparison and the section against the spike numbers. `bench/RESULTS.md`
+holds the node and Chrome table, produced by `node js/bench.mjs` and
+`js/bench.html`.
 
 ## Repository conventions
 
@@ -352,6 +357,19 @@ publishes to PyPI with trusted publishing from the `pypi` environment on a
 `v*` tag, then publishes the npm package with provenance, then the GitHub
 release with the release-notes file as its body. Nothing goes to crates.io
 in 0.1.0.
+
+## Follow-ups
+
+- **Move the input instead of copying it (lookup milestone).** `Archive::from_bytes`
+  takes `&[u8]` and copies it into the zip reader, which owns a `Vec`, and the
+  wasm host stages the request in its own buffer and releases it after
+  `omex_open`, so an archive is copied once more than it needs to be. The copy
+  is 0.047 ms of the 0.078 ms of the manifest-only call on the 1.4 MB archive
+  (`BENCHMARKS.md`); the other 0.019 ms of the 0.066 ms gap to `manifest_owned`
+  is the pass which adds the unlisted members, which stays. An
+  `Archive::from_vec` which takes the staged `Vec`, used by the host, would
+  reach about 0.031 ms, roughly 6x against python's 0.197 ms, and not the
+  0.012 ms of the floor. It belongs with the host and its own review, and is not done.
 
 ## Risks
 

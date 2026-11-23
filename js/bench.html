@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>pymetadata-core timings</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { font: 15px/1.5 system-ui, sans-serif; margin: 2rem auto; max-width: 60rem; padding: 0 1rem; }
+  pre { overflow-x: auto; }
+  button { font: inherit; padding: 0.3rem 1rem; }
+</style>
+</head>
+<body>
+<h1>pymetadata-core timings</h1>
+<p>
+  Serve the repository root, for example <code>python3 -m http.server 8000</code>, and open
+  <code>/js/bench.html</code>. Build the module first with <code>node js/build.mjs</code>. The
+  protocol is the one of <code>js/bench.mjs</code>; a benchmark is not a gate.
+</p>
+<p><button id="run">Run</button> <span id="state">idle</span></p>
+<pre id="out"></pre>
+<script type="module">
+  import { runBenchmarks, table } from "./bench.mjs";
+
+  const names = [
+    "BIOMD0000000001.omex",
+    "CombineArchiveShowCase.omex",
+    "CompModels.omex",
+    "iCGB21FR.omex",
+  ];
+
+  async function bytes(url) {
+    const response = await fetch(url);
+    if (!response.ok) throw new Error(`${url}: ${response.status}`);
+    return new Uint8Array(await response.arrayBuffer());
+  }
+
+  async function run() {
+    const state = document.getElementById("state");
+    state.textContent = "running";
+    try {
+      const module = await WebAssembly.compileStreaming(fetch("./runtime/pymetadata-core.wasm"));
+      const archives = new Map();
+      for (const name of names) {
+        archives.set(name, await bytes(`../crates/core/tests/data/omex/${name}`));
+      }
+      const rows = await runBenchmarks(module, archives);
+      const text = `${table(rows)}\n\n${navigator.userAgent}`;
+      document.getElementById("out").textContent = text;
+      window.benchResult = { rows, userAgent: navigator.userAgent, text };
+      state.textContent = "done";
+    } catch (error) {
+      state.textContent = `failed: ${error}`;
+      window.benchResult = { error: String(error) };
+    }
+  }
+
+  document.getElementById("run").addEventListener("click", run);
+  if (new URLSearchParams(location.search).has("auto")) run();
+</script>
+</body>
+</html>
