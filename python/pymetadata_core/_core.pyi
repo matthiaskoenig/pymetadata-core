@@ -133,6 +133,36 @@ class Archive:
             ArchiveBusyError: if another thread is using this archive.
         """
 
+    def head(self, location: str, limit: int) -> bytes:
+        """The first `limit` bytes of an entry, inflating no more than those.
+
+        `entry_bytes` inflates the whole member, which is what a host pays to look at
+        the start of one: the format of a member the manifest does not list is told by
+        its first bytes. This reads that much and stops. The inflate budget does not
+        apply, since the read is bounded by `limit`, so a member too large to inflate
+        whole still has a head, and a member shorter than `limit` gives what it holds.
+
+        Nothing is cached: a head is a prefix and no entry is made of it, so a later
+        `entry_bytes` inflates the member as it would have. An entry whose bytes are at
+        hand, from an earlier read or from `set_entry`, is served from those bytes.
+
+        Args:
+            location: the location of an entry which has bytes, normalized.
+            limit: how many bytes to read at most.
+
+        Returns:
+            The first `limit` bytes of the entry, or fewer if it is shorter.
+
+        Raises:
+            OmexError: if the entry has no bytes, for `./manifest.xml`, which is written
+                from the entries, for a location outside of the archive, for a negative
+                `limit` and for a member this core cannot read, which is one under an
+                unsupported compression method or without its password. A CRC32 or a
+                size which does not match is not reported, since both describe the whole
+                member, so a member whose end is damaged has a head and no error.
+            ArchiveBusyError: if another thread is using this archive.
+        """
+
     def set_entry(self, location: str, format: str, master: bool, data: bytes) -> None:
         """Add an entry with its bytes, or replace the entry of the same location.
 

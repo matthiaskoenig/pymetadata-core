@@ -706,3 +706,101 @@ fn reorder_entries_validates_before_it_moves() {
         "a refused order moves nothing"
     );
 }
+
+/// A head is the prefix of the member, and it inflates no more than it returns.
+#[test]
+fn head_reads_the_first_bytes_of_a_member() {
+    for name in ARCHIVES {
+        let bytes = fixture(name);
+        let mut archive = Archive::from_bytes(&bytes).unwrap();
+        let locations: Vec<String> = archive
+            .locations()
+            .filter(|location| *location != "." && *location != "./manifest.xml")
+            .map(str::to_string)
+            .collect();
+        for location in locations {
+            if !archive.has_bytes(&location).unwrap() {
+                continue;
+            }
+            let Ok(head) = archive.head(&location, 256) else {
+                continue; // a member this core cannot read has no head either
+            };
+            let whole = archive.entry_bytes(&location).unwrap().to_vec();
+            assert_eq!(head, whole[..whole.len().min(256)], "{name}: {location}");
+            assert!(head.len() <= 256);
+        }
+    }
+}
+
+/// A head of an entry whose bytes are at hand comes from those bytes.
+#[test]
+fn head_serves_what_is_already_read_and_what_the_caller_set() {
+    let mut archive = Archive::from_bytes(&fixture("CompModels.omex")).unwrap();
+    archive
+        .set_entry(
+            Entry::new("./new.txt", "text/plain", false).unwrap(),
+            b"0123456789".to_vec(),
+        )
+        .unwrap();
+    assert_eq!(archive.head("./new.txt", 4).unwrap(), b"0123");
+    assert_eq!(archive.head("./new.txt", 99).unwrap(), b"0123456789");
+    let location = archive
+        .locations()
+        .find(|l| l.ends_with(".xml") && *l != "./manifest.xml")
+        .unwrap()
+        .to_string();
+    let whole = archive.entry_bytes(&location).unwrap().to_vec();
+    assert_eq!(archive.head(&location, 8).unwrap(), whole[..8]);
+}
+
+/// A limit of zero reads nothing, and a member shorter than the limit gives what it holds.
+#[test]
+fn head_is_bounded_by_the_limit_and_by_the_member() {
+    let zip = stored_zip(&[("manifest.xml", MANIFEST), ("short.txt", b"ab")]);
+    let mut archive = Archive::from_bytes(&zip).unwrap();
+    assert_eq!(archive.head("./short.txt", 0).unwrap(), b"");
+    assert_eq!(archive.head("./short.txt", 1).unwrap(), b"a");
+    assert_eq!(archive.head("./short.txt", 256).unwrap(), b"ab");
+}
+
+/// A head answers for a member the budget of the reader refuses to inflate whole.
+#[test]
+fn head_reads_a_member_over_the_inflate_budget() {
+    let mut archive = Archive::from_bytes(&fixture("CompModels.omex")).unwrap();
+    archive.set_max_inflated_size(64);
+    let location = archive
+        .locations()
+        .find(|l| l.ends_with(".xml") && *l != "./manifest.xml")
+        .unwrap()
+        .to_string();
+    let head = archive.head(&location, 16).unwrap();
+    assert_eq!(
+        head.len(),
+        16,
+        "the head is bounded by its limit, not the budget"
+    );
+    let whole = archive.entry_bytes(&location);
+    assert!(
+        matches!(whole, Err(OmexError::Refused(_))),
+        "the whole member is still over the budget: {whole:?}"
+    );
+}
+
+/// The derived locations and an unknown one answer as `entry_bytes` does.
+#[test]
+fn head_refuses_the_manifest_and_reports_an_unknown_location() {
+    let mut archive = Archive::from_bytes(&fixture("CompModels.omex")).unwrap();
+    assert!(matches!(
+        archive.head("./manifest.xml", 8),
+        Err(OmexError::Refused(_))
+    ));
+    assert!(matches!(archive.head(".", 8), Err(OmexError::NotFound(_))));
+    assert!(matches!(
+        archive.head("./nothing.xml", 8),
+        Err(OmexError::NotFound(_))
+    ));
+    assert!(matches!(
+        archive.head("../evil.txt", 8),
+        Err(OmexError::Refused(_))
+    ));
+}

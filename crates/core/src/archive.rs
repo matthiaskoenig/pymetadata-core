@@ -248,6 +248,52 @@ impl Archive {
         }
     }
 
+    /// The first `limit` bytes of an entry, inflating no more than those.
+    ///
+    /// [`Archive::entry_bytes`] inflates the whole member, which is what a host pays to look
+    /// at the start of one: the format of a member a manifest does not list is told by its
+    /// first bytes, and 256 of them answer it. This reads that much and stops.
+    ///
+    /// The budget of the reader does not apply, since the read is bounded by `limit`: a
+    /// member which is too large to inflate still has a head. A member shorter than `limit`
+    /// gives what it holds, so a caller which gets fewer bytes has all of them.
+    ///
+    /// Nothing is cached: a head is a prefix and no entry is made of it, so a later
+    /// [`Archive::entry_bytes`] inflates the member as it would have, and two heads of the
+    /// same member inflate twice, each bounded by its `limit`. An entry whose bytes are at
+    /// hand, because they were read or handed over, is served from those bytes and inflates
+    /// nothing.
+    ///
+    /// # Errors
+    ///
+    /// [`OmexError::NotFound`] if the entry has no bytes, as for [`Archive::entry_bytes`],
+    /// [`OmexError::Refused`] for a location which cannot be normalized and for
+    /// `./manifest.xml`, which is written from the entries, and the errors of
+    /// [`crate::zip::Reader::inflate_head`]: an unsupported compression method, strong
+    /// encryption, a missing or wrong password, and a stream which is corrupt. What a head
+    /// does not report is a CRC32 or a size which does not match, since both describe the
+    /// whole member, so a member whose end is damaged has a head and no error.
+    pub fn head(&mut self, location: &str, limit: usize) -> Result<Vec<u8>, OmexError> {
+        let key = normalize_location(location)?;
+        if key == MANIFEST_LOCATION {
+            return Err(OmexError::Refused(format!(
+                "the bytes of '{key}' are written from the entries, see manifest() and Manifest::to_xml"
+            )));
+        }
+        match self.content.get(&key) {
+            Some(Content::Inflated { data, .. } | Content::Replaced(data)) => {
+                Ok(data[..data.len().min(limit)].to_vec())
+            }
+            Some(&Content::Member(index)) => {
+                let (reader, member) = self.member(index)?;
+                reader.inflate_head(member, limit)
+            }
+            None => Err(OmexError::NotFound(format!(
+                "no entry with bytes at '{key}'"
+            ))),
+        }
+    }
+
     /// The entries the `manifest.xml` of the source container declared, exactly as it did.
     ///
     /// One per `content` element in document order. Unlike [`Archive::manifest`] there is no

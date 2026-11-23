@@ -50,6 +50,20 @@ fn level_of(level: i128) -> PyResult<u32> {
         })
 }
 
+/// The number of bytes a head may read, from the argument of `head`.
+///
+/// The argument is a 128 bit integer, so a negative one reaches here and is an `OmexError`,
+/// where a `usize` would have raised pyo3's `OverflowError`. A limit above what this platform
+/// can address is the whole member, which is what `usize::MAX` asks for.
+fn limit_of(limit: i128) -> PyResult<usize> {
+    if limit < 0 {
+        return Err(to_py_err(CoreError::Refused(format!(
+            "the number of bytes {limit} is negative"
+        ))));
+    }
+    Ok(usize::try_from(limit).unwrap_or(usize::MAX))
+}
+
 #[pymethods]
 impl Archive {
     /// An empty archive, holding the two entries the specification requires.
@@ -141,6 +155,35 @@ impl Archive {
             .map_err(to_py_err)?;
         let bytes = inner.entry_bytes(location).map_err(to_py_err)?;
         Ok(PyBytes::new(py, bytes))
+    }
+
+    /// The first `limit` bytes of an entry, inflating no more than those.
+    ///
+    /// `entry_bytes` inflates the whole member; this reads the start of one and stops, which
+    /// is what a host needs to tell the format of a member from its first bytes. The inflate
+    /// budget does not apply, since the read is bounded by `limit`, so a member too large to
+    /// inflate whole still has a head. A member shorter than `limit` gives what it holds.
+    ///
+    /// Nothing is cached: a later `entry_bytes` inflates the member as it would have. An
+    /// entry whose bytes are at hand, from a read or from `set_entry`, is served from those.
+    ///
+    /// A location with no bytes is an `OmexError`, as are `./manifest.xml`, which is written
+    /// from the entries, a location outside of the archive and a negative `limit`. A CRC32 or
+    /// a size which does not match is not reported, since both describe the whole member.
+    fn head<'py>(
+        slf: &Bound<'py, Self>,
+        location: &str,
+        limit: i128,
+    ) -> PyResult<Bound<'py, PyBytes>> {
+        let py = slf.py();
+        let limit = limit_of(limit)?;
+        let mut this = slf.try_borrow_mut().map_err(busy)?;
+        let inner = &mut this.inner;
+        // the inflate of the head runs without the GIL, as the one of `entry_bytes` does
+        let head = py
+            .detach(|| inner.head(location, limit))
+            .map_err(to_py_err)?;
+        Ok(PyBytes::new(py, &head))
     }
 
     /// Add an entry with its bytes, or replace the entry of the same location.

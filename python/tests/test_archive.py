@@ -385,3 +385,66 @@ def test_reorder_entries_refuses_an_order_it_cannot_apply() -> None:
         with pytest.raises(OmexError):
             archive.reorder_entries(order)
     assert [location for location, _, _ in archive.entries] == before
+
+
+def test_head_is_the_prefix_of_the_entry(archive_path: Path) -> None:
+    """A head is what `entry_bytes` starts with, for every readable entry."""
+    archive = Archive.from_bytes(archive_path.read_bytes())
+    for location, _, _ in archive.entries:
+        if location in (".", MANIFEST) or not archive.has_bytes(location):
+            continue
+        try:
+            head = archive.head(location, 256)
+        except OmexError:
+            continue  # a member this core cannot read has no head either
+        assert head == archive.entry_bytes(location)[:256], location
+        assert len(head) <= 256
+
+
+def test_head_does_not_cache_and_serves_what_is_at_hand() -> None:
+    """A head leaves the entry unread, and uses the bytes of one which was read."""
+    archive = Archive.from_bytes(ARCHIVES[2].read_bytes())
+    archive.set_entry("new.txt", lookup_format("txt"), False, b"0123456789")
+    assert archive.head("./new.txt", 4) == b"0123"
+    assert archive.head("./new.txt", 99) == b"0123456789"
+    location = next(
+        name
+        for name, _, _ in archive.entries
+        if name.endswith(".xml") and name != MANIFEST
+    )
+    assert archive.head(location, 0) == b""
+    whole = archive.entry_bytes(location)
+    assert archive.head(location, 8) == whole[:8]
+
+
+def test_head_refuses_what_it_cannot_read() -> None:
+    """The manifest, an unknown location and a negative limit are errors."""
+    archive = Archive.from_bytes(ARCHIVES[2].read_bytes())
+    for location, limit in ((MANIFEST, 8), (".", 8), ("./nothing.xml", 8), ("../x", 8)):
+        with pytest.raises(OmexError):
+            archive.head(location, limit)
+    location = next(
+        name
+        for name, _, _ in archive.entries
+        if name.endswith(".xml") and name != MANIFEST
+    )
+    with pytest.raises(OmexError, match="negative"):
+        archive.head(location, -1)
+
+
+def test_head_classifies_an_xml_member_without_inflating_it() -> None:
+    """The case this exists for: the format of an unlisted member from its first bytes."""
+    archive = Archive.from_bytes(ARCHIVES[3].read_bytes())
+    unlisted = [
+        location
+        for location, _, _ in archive.entries
+        if location.endswith(".xml")
+        and location != MANIFEST
+        and archive.has_bytes(location)
+    ]
+    assert unlisted, "the fixture holds xml members"
+    for location in unlisted:
+        head = archive.head(location, 256)
+        assert guess_format("xml", head) == guess_format(
+            "xml", archive.entry_bytes(location)[:256]
+        ), location
