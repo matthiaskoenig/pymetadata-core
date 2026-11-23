@@ -291,10 +291,11 @@ impl Archive {
     ///   mode of the files it holds. A member the core compresses itself, which is the manifest
     ///   and every entry the caller handed over, carries the zip epoch, 1980-01-01 00:00:00,
     ///   and a regular file of mode 644: the core has no clock, since `SystemTime::now` is not
-    ///   available on `wasm32-unknown-unknown`, and a fixed stamp keeps a write deterministic. What a copy does not keep are the extra fields of the
-    ///   member: an Info-ZIP extended timestamp (0x5455), which holds the modification time to
-    ///   the second, goes with them, and the member keeps the MS-DOS fields, which hold that
-    ///   time rounded down to two seconds. See [`Writer::add_raw`] for the whole of it.
+    ///   available on `wasm32-unknown-unknown`, and a fixed stamp keeps a write deterministic.
+    ///   What a copy does not keep are the extra fields of the member: an Info-ZIP extended
+    ///   timestamp (0x5455), which holds the modification time to the second, goes with them,
+    ///   and the member keeps the MS-DOS fields, which hold that time rounded down to two
+    ///   seconds. See [`Writer::add_raw`] for the whole of it.
     ///
     /// # Errors
     ///

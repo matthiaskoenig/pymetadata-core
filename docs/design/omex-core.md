@@ -233,8 +233,12 @@ omex_write(recompress) -> i32   // the archive bytes
 omex_about() -> i32             // JSON: version, backend
 ```
 
-Error codes mirror the sibling: `malformed`, `refused`, `internal`, `panic`,
-and the panic hook writes its message into the output buffer before the trap.
+Error codes mirror the sibling. The core produces four, the kind strings of
+`wire::kind`: `malformed`, `refused`, `unsupported` and `not_found`, one per
+variant of `OmexError`. Two more are host-level and the core never returns
+them: `internal`, which the wasm host raises for a failure outside of the core
+(e.g. a request before `omex_open`), and `panic`, which its panic hook raises,
+writing the message into the output buffer before the trap.
 
 `js/` ships `loader.mjs` with no dependency and no Node API, so it runs in a
 browser, a Web Worker and Node. `js/build.mjs` builds the module, copies it

@@ -6,6 +6,7 @@ pub mod formats;
 mod formats_table;
 pub mod location;
 pub mod manifest;
+pub mod wire;
 pub mod zip;
 
 pub use archive::Archive;
