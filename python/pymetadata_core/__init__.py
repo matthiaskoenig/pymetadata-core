@@ -11,6 +11,7 @@ from pymetadata_core._core import (
     UnsupportedError,
     __version__,
     guess_format,
+    has_manifest,
     lookup_format,
     normalize_location,
 )
@@ -26,6 +27,7 @@ __all__ = [
     "UnsupportedError",
     "__version__",
     "guess_format",
+    "has_manifest",
     "lookup_format",
     "normalize_location",
 ]

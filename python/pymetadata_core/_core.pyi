@@ -1,5 +1,6 @@
 """Type stubs of the extension module `pymetadata_core._core`."""
 
+import os
 from collections.abc import Sequence
 from typing import final
 
@@ -292,6 +293,34 @@ class Archive:
                 an encrypted archive which was opened without its password.
             ArchiveBusyError: if another thread is using this archive.
         """
+
+def has_manifest(path: str | os.PathLike[str]) -> bool:
+    """Whether the file is a COMBINE archive, i.e. a zip container with a manifest.
+
+    This reads the end of the file, which says where the central directory is, and
+    then that directory, which lists the names. No member is inflated and none is
+    decrypted, so the cost is the size of the central directory and not the size of
+    the archive, where `Archive.from_bytes` needs every byte of it in memory. That
+    makes it the call for the question "is this an archive at all", which is a gate a
+    host puts in front of opening one.
+
+    A file which is no zip container, and a container which declares no manifest,
+    answer `False`. An encrypted archive answers `True`, since its manifest is
+    declared whether or not a caller may read it, and so does a container holding a
+    member name `Archive.from_bytes` would refuse: recognizing an archive is not
+    opening one.
+
+    Args:
+        path: the file to look at.
+
+    Returns:
+        True if the container declares a `./manifest.xml`.
+
+    Raises:
+        OSError: if the file cannot be opened or read, as `zipfile.is_zipfile` raises
+            for a path which is not there. Being unable to read a file is not an
+            answer about its content.
+    """
 
 def normalize_location(location: str) -> str:
     """Normalize a location to a relative POSIX path with the `./` prefix.

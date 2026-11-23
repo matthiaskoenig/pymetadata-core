@@ -2,6 +2,7 @@
 
 mod archive;
 mod errors;
+mod probe;
 
 use pyo3::prelude::*;
 
@@ -26,6 +27,7 @@ fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
         m.py().get_type::<errors::ArchiveBusyError>(),
     )?;
     m.add_class::<archive::Archive>()?;
+    m.add_function(wrap_pyfunction!(probe::has_manifest, m)?)?;
     m.add_function(wrap_pyfunction!(archive::normalize_location, m)?)?;
     m.add_function(wrap_pyfunction!(archive::guess_format, m)?)?;
     m.add_function(wrap_pyfunction!(archive::lookup_format, m)?)?;

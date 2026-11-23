@@ -3,12 +3,14 @@
 import inspect
 import io
 import struct
+import tracemalloc
 import zipfile
 from pathlib import Path
 
 import pytest
-from conftest import ARCHIVES
+from conftest import ARCHIVES, DATA
 
+import pymetadata_core
 from pymetadata_core import (
     Archive,
     OmexError,
@@ -18,6 +20,13 @@ from pymetadata_core import (
 )
 
 MANIFEST = "./manifest.xml"
+
+MANIFEST_XML = """<?xml version="1.0" encoding="UTF-8"?>
+<omexManifest xmlns="http://identifiers.org/combine.specifications/omex-manifest">
+  <content location="." format="http://identifiers.org/combine.specifications/omex"/>
+  <content location="./manifest.xml" format="http://identifiers.org/combine.specifications/omex-manifest"/>
+</omexManifest>"""
+"""the manifest of a container built by hand."""
 
 
 def test_there_are_four_fixtures():
@@ -448,3 +457,64 @@ def test_head_classifies_an_xml_member_without_inflating_it() -> None:
         assert guess_format("xml", head) == guess_format(
             "xml", archive.entry_bytes(location)[:256]
         ), location
+
+
+def test_has_manifest_recognizes_every_fixture(archive_path: Path) -> None:
+    """The probe agrees with opening the archive, for every archive of the corpus."""
+    assert pymetadata_core.has_manifest(archive_path) is True
+    assert pymetadata_core.has_manifest(str(archive_path)) is True
+
+
+def test_has_manifest_reads_a_fraction_of_the_file(tmp_path: Path) -> None:
+    """The point of the probe: the cost is the directory, not the archive."""
+    source = ARCHIVES[3]
+    padded = tmp_path / "padded.omex"
+    # an archive with a few MB of members, to tell the two costs apart
+    padded.write_bytes(source.read_bytes())
+    assert pymetadata_core.has_manifest(padded) is True
+    tracemalloc.start()
+    pymetadata_core.has_manifest(padded)
+    probe_peak = tracemalloc.get_traced_memory()[1]
+    tracemalloc.stop()
+    tracemalloc.start()
+    Archive.from_bytes(padded.read_bytes())
+    open_peak = tracemalloc.get_traced_memory()[1]
+    tracemalloc.stop()
+    assert probe_peak < open_peak, (probe_peak, open_peak)
+
+
+def test_has_manifest_is_false_for_what_is_no_archive(tmp_path: Path) -> None:
+    """A file which is no zip, and a zip without a manifest, are no archives."""
+    plain = tmp_path / "plain.txt"
+    plain.write_bytes(b"this is not a zip container")
+    assert pymetadata_core.has_manifest(plain) is False
+    empty = tmp_path / "empty.bin"
+    empty.write_bytes(b"")
+    assert pymetadata_core.has_manifest(empty) is False
+    no_manifest = tmp_path / "no_manifest.zip"
+    with zipfile.ZipFile(no_manifest, "w") as zf:
+        zf.writestr("readme.txt", "no manifest here")
+    assert pymetadata_core.has_manifest(no_manifest) is False
+
+
+def test_has_manifest_recognizes_an_archive_it_could_not_open(tmp_path: Path) -> None:
+    """Recognizing an archive is not opening one: no member is read."""
+    encrypted = DATA / "zip" / "encrypted_omex.zip"
+    assert pymetadata_core.has_manifest(encrypted) is True
+    with pytest.raises(pymetadata_core.PasswordError):
+        Archive.from_bytes(encrypted.read_bytes())
+    outside = tmp_path / "outside.omex"
+    with zipfile.ZipFile(outside, "w") as zf:
+        zf.writestr("manifest.xml", MANIFEST_XML)
+        zf.writestr("../evil.txt", "x")
+    assert pymetadata_core.has_manifest(outside) is True
+    with pytest.raises(OmexError):
+        Archive.from_bytes(outside.read_bytes())
+
+
+def test_has_manifest_raises_for_a_file_it_cannot_read(tmp_path: Path) -> None:
+    """A path which is not there is an OSError, as it is for `zipfile.is_zipfile`."""
+    with pytest.raises(OSError):
+        pymetadata_core.has_manifest(tmp_path / "nothing.omex")
+    with pytest.raises(OSError):
+        pymetadata_core.has_manifest(tmp_path)

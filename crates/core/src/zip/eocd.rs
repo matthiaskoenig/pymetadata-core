@@ -20,6 +20,11 @@ use super::{as_usize, end_of, has_signature, u16_at, u32_at, u64_at};
 use crate::OmexError;
 
 /// Where the central directory of an archive is and how many members it lists.
+///
+/// Every offset is one into the bytes the record was found in, counted from `base`, so it is
+/// an index into those bytes when `base` is zero, which is every read of a whole archive. A
+/// probe which hands [`Eocd::find`] the tail of a file passes the offset of that tail as
+/// `base` and gets the offsets of the file back, see [`crate::zip::probe`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) struct Eocd {
     /// The number of members the central directory lists.
@@ -59,6 +64,19 @@ impl Eocd {
     /// record it belongs to reaches past the end of the archive, or if the central directory it
     /// declares cannot be reconciled with where the record was found.
     pub(super) fn find(bytes: &[u8]) -> Result<Eocd, OmexError> {
+        Self::find_at(bytes, 0)
+    }
+
+    /// Find and read the record at the end of `bytes`, which start at `base` of the file.
+    ///
+    /// `base` is zero for a whole archive, and the offset of the window for a caller which
+    /// holds only the tail of a file: the offsets of the result are offsets of that file
+    /// either way.
+    ///
+    /// # Errors
+    ///
+    /// As [`Eocd::find`].
+    pub(super) fn find_at(bytes: &[u8], base: u64) -> Result<Eocd, OmexError> {
         let Some(highest) = bytes.len().checked_sub(EOCD_SIZE) else {
             return Err(OmexError::Malformed(format!(
                 "{} bytes are too few for a zip archive",
@@ -73,12 +91,12 @@ impl Eocd {
             }
             let comment = usize::from(u16_at(bytes, position + 20)?);
             if position.saturating_add(EOCD_SIZE).saturating_add(comment) == bytes.len() {
-                return Self::read(bytes, position);
+                return Self::read(bytes, position, base);
             }
             last = last.or(Some(position));
         }
         match last {
-            Some(position) => Self::read(bytes, position),
+            Some(position) => Self::read(bytes, position, base),
             None => Err(OmexError::Malformed(
                 "the archive has no end-of-central-directory record".to_string(),
             )),
@@ -90,7 +108,7 @@ impl Eocd {
     /// # Errors
     ///
     /// [`OmexError::Malformed`] if a record reaches past the end of the archive.
-    fn read(bytes: &[u8], position: usize) -> Result<Eocd, OmexError> {
+    fn read(bytes: &[u8], position: usize, base: u64) -> Result<Eocd, OmexError> {
         // the scan bounds `position` at 22 bytes before the end, so the fields of the fixed part
         // are inside the buffer and their offsets cannot overflow
         let entries = u16_at(bytes, position + 10)?;
@@ -100,7 +118,7 @@ impl Eocd {
         // 32 bit record stands where no zip64 record backs it
         let sentinel = entries == SENTINEL16 || cd_size == SENTINEL32 || cd_offset == SENTINEL32;
         let trailer = if sentinel {
-            Self::zip64(bytes, position)?
+            Self::zip64(bytes, position, base)?
         } else {
             None
         };
@@ -108,7 +126,7 @@ impl Eocd {
             entries: entries.into(),
             cd_size: cd_size.into(),
             cd_offset: cd_offset.into(),
-            cd_end: position as u64,
+            cd_end: base.saturating_add(position as u64),
         }))
     }
 
@@ -123,7 +141,7 @@ impl Eocd {
     ///
     /// [`OmexError::Malformed`] if the locator points past the end of the archive or at
     /// something which is not a zip64 end-of-central-directory record.
-    fn zip64(bytes: &[u8], position: usize) -> Result<Option<Trailer>, OmexError> {
+    fn zip64(bytes: &[u8], position: usize, base: u64) -> Result<Option<Trailer>, OmexError> {
         let Some(locator) = position.checked_sub(ZIP64_LOCATOR_SIZE) else {
             return Ok(None);
         };
@@ -133,10 +151,20 @@ impl Eocd {
         let record = match locator.checked_sub(ZIP64_EOCD_SIZE) {
             Some(behind) if has_signature(bytes, behind, &ZIP64_EOCD_SIGNATURE) => behind,
             _ => {
+                // the declared offset is an offset of the archive, so it names a place in
+                // `bytes` only when those are the whole archive: a window which does not hold
+                // the record cannot resolve it and says so
                 let declared = as_usize(
                     u64_at(bytes, end_of(locator, 8)?)?,
                     "the offset of the zip64 end-of-central-directory record",
                 )?;
+                let declared = declared
+                    .checked_sub(as_usize(base, "the offset of the window")?)
+                    .ok_or_else(|| {
+                        OmexError::Malformed(format!(
+                            "the zip64 end-of-central-directory record at offset {declared} is                              in front of the {base} bytes this window starts at"
+                        ))
+                    })?;
                 if !has_signature(bytes, declared, &ZIP64_EOCD_SIGNATURE) {
                     return Err(OmexError::Malformed(format!(
                         "no zip64 end-of-central-directory record at offset {declared}"
@@ -149,7 +177,7 @@ impl Eocd {
             entries: u64_at(bytes, end_of(record, 32)?)?,
             cd_size: u64_at(bytes, end_of(record, 40)?)?,
             cd_offset: u64_at(bytes, end_of(record, 48)?)?,
-            cd_end: record as u64,
+            cd_end: base.saturating_add(record as u64),
         }))
     }
 

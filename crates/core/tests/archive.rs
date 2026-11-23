@@ -820,3 +820,92 @@ fn head_refuses_the_manifest_and_reports_an_unknown_location() {
         Err(OmexError::Refused(_))
     ));
 }
+
+/// The probe answers from the central directory, for every archive of the corpus.
+#[test]
+fn the_probe_recognizes_every_fixture() {
+    for name in ARCHIVES {
+        let bytes = fixture(name);
+        assert!(
+            pymetadata_core::zip::probe::declares_manifest_in(&bytes).unwrap(),
+            "{name}"
+        );
+    }
+}
+
+/// A host with a file reads the tail and the central directory, and nothing else.
+#[test]
+fn the_probe_answers_from_the_tail_and_the_directory() {
+    use pymetadata_core::zip::probe::{TAIL_SIZE, central_directory, declares_manifest};
+    for name in ARCHIVES {
+        let bytes = fixture(name);
+        let size = bytes.len();
+        let start = size.saturating_sub(TAIL_SIZE);
+        let located = central_directory(&bytes[start..], start as u64).unwrap();
+        let from = located.offset as usize;
+        let to = from + located.size as usize;
+        assert!(to <= size, "{name}: the directory is inside the file");
+        assert!(
+            declares_manifest(&bytes[from..to], located.entries).unwrap(),
+            "{name}"
+        );
+        // what the probe reads is the tail plus the directory, not the archive
+        let read = (size - start) + located.size as usize;
+        assert!(
+            read < size || size < TAIL_SIZE,
+            "{name}: the probe read {read} of {size} bytes"
+        );
+    }
+}
+
+/// A container with no manifest is no COMBINE archive, and bytes which are no zip are no answer.
+#[test]
+fn the_probe_tells_a_container_without_a_manifest_from_one_which_is_no_zip() {
+    let zip = stored_zip(&[("readme.txt", b"no manifest here")]);
+    assert!(!pymetadata_core::zip::probe::declares_manifest_in(&zip).unwrap());
+    let not_a_zip = pymetadata_core::zip::probe::declares_manifest_in(b"this is no zip at all");
+    assert!(
+        matches!(not_a_zip, Err(OmexError::Malformed(_))),
+        "{not_a_zip:?}"
+    );
+}
+
+/// The probe reads no member, so an encrypted archive and an unreadable member answer yes.
+#[test]
+fn the_probe_recognizes_an_archive_it_cannot_read() {
+    let path = format!(
+        "{}/tests/data/zip/encrypted_omex.zip",
+        env!("CARGO_MANIFEST_DIR")
+    );
+    let bytes = std::fs::read(&path).unwrap();
+    assert!(
+        matches!(Archive::from_bytes(&bytes), Err(OmexError::Password(_))),
+        "reading it needs the password"
+    );
+    assert!(
+        pymetadata_core::zip::probe::declares_manifest_in(&bytes).unwrap(),
+        "recognizing it does not"
+    );
+}
+
+/// A member name pointing outside of the archive does not keep the probe from answering.
+#[test]
+fn the_probe_answers_for_a_container_with_a_name_it_would_refuse() {
+    let zip = stored_zip(&[("manifest.xml", MANIFEST), ("../evil.txt", b"x")]);
+    assert!(
+        matches!(Archive::from_bytes(&zip), Err(OmexError::Refused(_))),
+        "opening it is refused"
+    );
+    assert!(
+        pymetadata_core::zip::probe::declares_manifest_in(&zip).unwrap(),
+        "the container is still an archive by its structure"
+    );
+}
+
+/// A manifest named `./manifest.xml` in the container is the manifest, as the reader sees it.
+#[test]
+fn the_probe_normalizes_the_names_it_compares() {
+    let zip = stored_zip(&[("./manifest.xml", MANIFEST), ("model.xml", b"<sbml/>")]);
+    assert!(pymetadata_core::zip::probe::declares_manifest_in(&zip).unwrap());
+    assert!(Archive::from_bytes(&zip).is_ok(), "the reader agrees");
+}

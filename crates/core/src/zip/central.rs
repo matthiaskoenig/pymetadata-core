@@ -119,7 +119,7 @@ pub(super) fn members(bytes: &[u8], eocd: &Eocd) -> Result<Vec<Member>, OmexErro
 ///
 /// [`OmexError::Malformed`] if the header reaches past the end of the archive, if its name is
 /// no valid UTF-8 although bit 11 says so, or if a zip64 extra field it needs is missing.
-fn read(bytes: &[u8], offset: usize) -> Result<(Member, usize), OmexError> {
+pub(super) fn read(bytes: &[u8], offset: usize) -> Result<(Member, usize), OmexError> {
     let flags = u16_at(bytes, end_of(offset, 8)?)?;
     let method = u16_at(bytes, end_of(offset, 10)?)?;
     let dos_time = u16_at(bytes, end_of(offset, 12)?)?;

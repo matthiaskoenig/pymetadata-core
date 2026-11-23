@@ -132,11 +132,21 @@ impl Archive {
     pub fn locations(&self) -> impl Iterator<Item = &str>;
     pub fn entry(&self, location: &str) -> Option<&Entry>;
     pub fn entry_bytes(&mut self, location: &str) -> Result<&[u8], OmexError>;
+    pub fn head(&mut self, location: &str, limit: usize) -> Result<Vec<u8>, OmexError>;
     pub fn set_entry(&mut self, entry: Entry, bytes: Vec<u8>) -> Result<(), OmexError>;
+    pub fn set_entry_format(
+        &mut self, location: &str, format: &str, master: bool
+    ) -> Result<(), OmexError>;
     pub fn remove_entry(&mut self, location: &str) -> Result<Option<Entry>, OmexError>;
+    pub fn reorder_entries(&mut self, order: &[impl AsRef<str>]) -> Result<(), OmexError>;
     pub fn to_bytes(&mut self) -> Result<Vec<u8>, OmexError>;
     pub fn to_bytes_recompressed(&mut self, level: u32) -> Result<Vec<u8>, OmexError>;
 }
+
+// zip::probe, which recognizes a container without opening it
+pub fn declares_manifest_in(bytes: &[u8]) -> Result<bool, OmexError>;
+pub fn central_directory(tail: &[u8], base: u64) -> Result<CentralDirectory, OmexError>;
+pub fn declares_manifest(bytes: &[u8], entries: u64) -> Result<bool, OmexError>;
 
 pub struct Entry { pub location: String, pub format: String, pub master: bool }
 
@@ -198,13 +208,17 @@ class Archive:
     def has_bytes(self, location: str) -> bool: ...
     def manifest_xml(self) -> str: ...
     def entry_bytes(self, location: str) -> bytes: ...
+    def head(self, location: str, limit: int) -> bytes: ...
     def set_entry(
         self, location: str, format: str, master: bool, data: bytes
     ) -> None: ...
+    def set_entry_format(self, location: str, format: str, master: bool) -> None: ...
     def remove_entry(self, location: str) -> bool: ...
+    def reorder_entries(self, order: Sequence[str]) -> None: ...
     def to_bytes(self, recompress: bool = False, level: int = 9) -> bytes: ...
 
 
+def has_manifest(path: str | os.PathLike[str]) -> bool: ...
 def normalize_location(location: str) -> str: ...
 def guess_format(suffix: str, head: bytes = b"") -> str: ...
 def lookup_format(format_key: str) -> str: ...
@@ -221,6 +235,35 @@ or a `set_entry`, false for a listed entry no member provides and for `.` and
 `./manifest.xml`, and `OmexError` (refused) for a location outside of the
 archive. Together they let `pymetadata` tell a dangling entry from a member, and
 find the members the manifest does not list, without `entry_bytes` inflating.
+
+`head(location, limit)` reads the first bytes of an entry and stops there, for a
+host which tells the format of a member from its first bytes: `entry_bytes`
+inflates the whole member for the same 256 bytes. The budget of the reader does
+not apply, since the read is bounded by `limit`, and nothing is cached, so a
+later `entry_bytes` inflates as it would have. A head is a prefix, so the CRC32
+and the size of the central directory are not checked: both describe the whole
+member.
+
+`set_entry_format(location, format, master)` changes the manifest entry and
+leaves the content alone, where `set_entry` takes the bytes and therefore
+inflates and deflates a member whose content does not change. The entry keeps
+its position, and a location the manifest does not list is `not found`.
+
+`reorder_entries(order)` lays the locations it is given into the slots those
+entries hold, lowest slot first, so a host which keeps an order of its own sets
+the order of the written manifest and of the members behind it; an entry which
+is not named stays where it is. Without it the write lists the members as the
+manifest holds them, which for an opened archive is what its `manifest.xml`
+declared and then the members it did not list, in container order.
+
+`has_manifest(path)` answers whether a file is a COMBINE archive from its
+central directory alone: it reads the tail of the file, which says where that
+directory is, and then the directory, which lists the names. No member is
+inflated or decrypted, so an encrypted archive and one holding a member name
+`from_bytes` would refuse both answer `True`, and a file which is no zip
+container answers `False` instead of raising. It is the gate in front of opening
+an archive, which `from_bytes` cannot be: that needs every byte of the file in
+memory, where this reads at most 64 kB plus the directory.
 
 `declared_entries` is the manifest as the container's `manifest.xml` declared it:
 one tuple per `content` element in document order, with no entry invented for a
