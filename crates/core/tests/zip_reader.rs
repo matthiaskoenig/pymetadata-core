@@ -50,7 +50,7 @@ fn sha256(bytes: &[u8]) -> String {
 fn reads_the_members_of_every_fixture() {
     for archive in ARCHIVES {
         let bytes = fixture(&format!("omex/{archive}"));
-        let reader = Reader::new(&bytes).unwrap_or_else(|error| panic!("{archive}: {error}"));
+        let reader = Reader::new(bytes).unwrap_or_else(|error| panic!("{archive}: {error}"));
         let names: Vec<&str> = reader
             .members()
             .iter()
@@ -74,7 +74,7 @@ fn inflate_matches_python_zipfile() {
     assert_eq!(expected.len(), ARCHIVES.len());
     for (archive, oracles) in &expected {
         let bytes = fixture(&format!("omex/{archive}"));
-        let reader = Reader::new(&bytes).unwrap_or_else(|error| panic!("{archive}: {error}"));
+        let reader = Reader::new(bytes).unwrap_or_else(|error| panic!("{archive}: {error}"));
         assert_eq!(
             reader.members().len(),
             oracles.len(),
@@ -109,7 +109,7 @@ fn inflate_matches_python_zipfile() {
 #[test]
 fn reads_a_stored_member() {
     let bytes = fixture("zip/stored.zip");
-    let reader = Reader::new(&bytes).unwrap();
+    let reader = Reader::new(bytes).unwrap();
     assert_eq!(reader.members().len(), 1);
     let member = &reader.members()[0];
     assert_eq!(member.name, "stored.txt");
@@ -125,7 +125,7 @@ fn reads_a_stored_member() {
 #[test]
 fn reads_zip64_sizes() {
     let bytes = fixture("zip/zip64.zip");
-    let reader = Reader::new(&bytes).unwrap();
+    let reader = Reader::new(bytes).unwrap();
     // the end-of-central-directory record holds 0xffff entries, the zip64 record the true two
     assert_eq!(reader.members().len(), 2);
     let names: Vec<&str> = reader
@@ -156,7 +156,7 @@ fn reads_a_member_with_a_data_descriptor() {
         ("omex/CompModels.omex", false),
     ] {
         let bytes = fixture(archive);
-        let reader = Reader::new(&bytes).unwrap();
+        let reader = Reader::new(bytes.clone()).unwrap();
         let members: Vec<_> = reader
             .members()
             .iter()
@@ -199,8 +199,8 @@ fn reads_an_archive_behind_a_stub() {
         let plain = fixture(original);
         let stub = (behind.len() - plain.len()) as u64;
         assert_eq!(stub, 512, "{prepended}");
-        let reader = Reader::new(&behind).unwrap_or_else(|error| panic!("{prepended}: {error}"));
-        let source = Reader::new(&plain).unwrap();
+        let reader = Reader::new(behind).unwrap_or_else(|error| panic!("{prepended}: {error}"));
+        let source = Reader::new(plain).unwrap();
         assert_eq!(
             reader.members().len(),
             source.members().len(),
@@ -228,7 +228,7 @@ fn reads_an_archive_behind_a_stub() {
 #[test]
 fn refuses_a_central_directory_offset_behind_its_end() {
     let bytes = fixture("zip/bad_offset.zip");
-    let error = Reader::new(&bytes).unwrap_err();
+    let error = Reader::new(bytes).unwrap_err();
     assert!(matches!(error, OmexError::Malformed(_)), "{error}");
 }
 
@@ -237,13 +237,13 @@ fn refuses_a_central_directory_offset_behind_its_end() {
 fn refuses_a_truncated_archive() {
     // the archive without its end-of-central-directory record
     let bytes = fixture("zip/truncated.zip");
-    assert!(matches!(Reader::new(&bytes), Err(OmexError::Malformed(_))));
+    assert!(matches!(Reader::new(bytes), Err(OmexError::Malformed(_))));
     // and the same archive cut one byte, two bytes, 33 bytes and all but nothing short
     let full = fixture("zip/stored.zip");
     for cut in [0, 1, 32, full.len() - 1] {
         let short = &full[..full.len() - cut - 1];
         assert!(
-            matches!(Reader::new(short), Err(OmexError::Malformed(_))),
+            matches!(Reader::new(short.to_vec()), Err(OmexError::Malformed(_))),
             "cut {cut}"
         );
     }
@@ -253,7 +253,7 @@ fn refuses_a_truncated_archive() {
 #[test]
 fn refuses_a_bad_crc() {
     let bytes = fixture("zip/bad_crc.zip");
-    let reader = Reader::new(&bytes).unwrap();
+    let reader = Reader::new(bytes).unwrap();
     let member = &reader.members()[0];
     let error = reader.inflate(member).unwrap_err();
     assert!(matches!(error, OmexError::Malformed(_)), "{error}");
@@ -264,7 +264,7 @@ fn refuses_a_bad_crc() {
 #[test]
 fn refuses_an_unsupported_method() {
     let bytes = fixture("zip/bzip2.zip");
-    let reader = Reader::new(&bytes).unwrap();
+    let reader = Reader::new(bytes).unwrap();
     let member = &reader.members()[0];
     assert_eq!(member.method, 12);
     let error = reader.inflate(member).unwrap_err();
@@ -283,7 +283,7 @@ fn refuses_an_unsupported_method() {
 #[test]
 fn refuses_an_oversized_member() {
     let bytes = fixture("zip/oversized.zip");
-    let reader = Reader::new(&bytes).unwrap();
+    let reader = Reader::new(bytes.clone()).unwrap();
     // the first member claims to be stored over more bytes than the archive holds
     let compressed = &reader.members()[0];
     assert!(compressed.compressed_size > bytes.len() as u64);
@@ -316,7 +316,7 @@ fn refuses_more_than_it_may_inflate() {
     // two compressed bytes which declare 2 GB are no member beyond the allowance, they are a
     // lie: raising the budget would not read them, so they are malformed and name both numbers
     let bytes = fixture("zip/oversized.zip");
-    let reader = Reader::new(&bytes).unwrap();
+    let reader = Reader::new(bytes).unwrap();
     let member = &reader.members()[2];
     assert_eq!(member.name, "beyond_the_cap.txt");
     assert!(member.uncompressed_size > MAX_INFLATED_SIZE as u64);
@@ -334,8 +334,8 @@ fn refuses_more_than_it_may_inflate() {
 
     // a lowered allowance, against a member the default reads
     let plain = fixture("omex/CompModels.omex");
-    let lowered = Reader::with_max_inflated_size(&plain, 100).unwrap();
-    let default = Reader::new(&plain).unwrap();
+    let lowered = Reader::with_max_inflated_size(plain.clone(), 100).unwrap();
+    let default = Reader::new(plain).unwrap();
     for (small, member) in lowered.members().iter().zip(default.members()) {
         if small.uncompressed_size > 100 {
             let error = lowered.inflate(small).unwrap_err();
@@ -350,7 +350,7 @@ fn refuses_more_than_it_may_inflate() {
     // a declaration the compressed bytes can produce, which is merely above the allowance, is
     // refused before anything is allocated: 100 bytes of a deflate stream may hold 100 KB
     let plain = fixture("omex/CompModels.omex");
-    let tight = Reader::with_max_inflated_size(&plain, 0).unwrap();
+    let tight = Reader::with_max_inflated_size(plain, 0).unwrap();
     let member = tight
         .members()
         .iter()
@@ -362,7 +362,7 @@ fn refuses_more_than_it_may_inflate() {
     // the corpus leaves the default two orders of magnitude of room
     for archive in ARCHIVES {
         let bytes = fixture(&format!("omex/{archive}"));
-        for member in Reader::new(&bytes).unwrap().members() {
+        for member in Reader::new(bytes).unwrap().members() {
             assert!(
                 member.uncompressed_size < (MAX_INFLATED_SIZE / 100) as u64,
                 "{archive}/{}",
@@ -376,7 +376,7 @@ fn refuses_more_than_it_may_inflate() {
 #[test]
 fn refuses_a_stream_longer_than_the_declared_size() {
     let bytes = fixture("zip/understated.zip");
-    let reader = Reader::new(&bytes).unwrap();
+    let reader = Reader::new(bytes).unwrap();
     let member = reader
         .members()
         .iter()
@@ -396,7 +396,7 @@ fn refuses_a_stream_longer_than_the_declared_size() {
 #[test]
 fn reads_an_empty_deflate_member_of_no_bytes() {
     let bytes = fixture("zip/empty_deflate.zip");
-    let reader = Reader::new(&bytes).unwrap();
+    let reader = Reader::new(bytes).unwrap();
     let member = &reader.members()[0];
     assert_eq!((member.method, member.compressed_size), (8, 0));
     assert_eq!(reader.inflate(member).unwrap(), b"");
@@ -411,7 +411,7 @@ fn refuses_a_zero_byte_stream_which_claims_bytes() {
         .position(|window| window == b"PK\x01\x02")
         .unwrap();
     bytes[central + 24..central + 28].copy_from_slice(&5u32.to_le_bytes());
-    let reader = Reader::new(&bytes).unwrap();
+    let reader = Reader::new(bytes).unwrap();
     let error = reader.inflate(&reader.members()[0]).unwrap_err();
     assert!(matches!(error, OmexError::Malformed(_)), "{error}");
 }

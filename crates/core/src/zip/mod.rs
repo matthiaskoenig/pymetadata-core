@@ -5,7 +5,7 @@
 //! where it must have none (`spike/RESULTS.md`). The records are simple enough to read, and the
 //! writer needs the raw members anyway, so the core owns the container.
 //!
-//! Everything here works on borrowed bytes and never touches the filesystem. Every length,
+//! Everything here works on bytes in memory and never touches the filesystem. Every length,
 //! offset and count is read from host controlled bytes, so it is checked against the buffer
 //! before it is used: a crafted archive is an [`OmexError`] and never a panic, which would trap
 //! a wasm instance.

@@ -32,6 +32,9 @@ Rust: what the reference implementation writes is better evidence than bytes we 
     encrypted_stored.zip
                      the same as `encrypted.zip`, but the member is stored and not
                      deflated
+    encrypted_omex.zip
+                     a COMBINE archive of `manifest.xml` and `extra.txt`, both stored under
+                     ZipCrypto with the password `test1234`, for the archive of the core
     aes.zip          a member which claims WinZip AES (method 99, the 0x9901 extra
                      field); the bytes behind it are not real ciphertext, the reader
                      refuses it before it reads them
@@ -312,6 +315,56 @@ def build_zip(
     central += name + extra
     end = struct.pack(
         "<4sHHHHIIH", EOCD_SIGNATURE, 0, 0, 1, 1, len(central), len(body), 0
+    )
+    return body + central + end
+
+
+#: the members of `encrypted_omex.zip`: a manifest listing `./extra.txt`, and that file
+OMEX_MANIFEST = b"""<?xml version="1.0"?>
+<omexManifest xmlns="http://identifiers.org/combine.specifications/omex-manifest">
+  <content location="." format="http://identifiers.org/combine.specifications/omex"/>
+  <content location="./manifest.xml" format="http://identifiers.org/combine.specifications/omex-manifest"/>
+  <content location="./extra.txt" format="http://purl.org/NET/mediatypes/text/plain"/>
+</omexManifest>
+"""
+OMEX_MEMBERS = {b"manifest.xml": OMEX_MANIFEST, b"extra.txt": b"extra"}
+
+
+def build_encrypted_omex() -> bytes:
+    """Assemble the archive of `OMEX_MEMBERS`, each member stored and ZipCrypto encrypted.
+
+    Returns:
+        The archive.
+    """
+    body = b""
+    central = b""
+    for name, content in OMEX_MEMBERS.items():
+        data = encrypt_member(content, False, False)
+        crc = zlib.crc32(content)
+        fields = (0x01, 0, DOS_TIME, DOS_DATE, crc, len(data), len(content), len(name), 0)
+        central += (
+            struct.pack(
+                "<4sHHHHHHIIIHHHHHII",
+                CENTRAL_SIGNATURE,
+                (3 << 8) | 20,
+                20,
+                *fields[:7],
+                *fields[7:],
+                0,
+                0,
+                0,
+                0,
+                len(body),
+            )
+            + name
+        )
+        body += (
+            struct.pack("<4sHHHHHIIIHH", b"PK\x03\x04", 20, *fields)
+            + name
+            + data
+        )
+    end = struct.pack(
+        "<4sHHHHIIH", EOCD_SIGNATURE, 0, 0, 2, 2, len(central), len(body), 0
     )
     return body + central + end
 
@@ -641,6 +694,7 @@ def main() -> None:
     (DATA / "encrypted_descriptor.zip").write_bytes(
         build_zip(name, 8, 0x09, encrypt_member(SECRET, True), SECRET)
     )
+    (DATA / "encrypted_omex.zip").write_bytes(build_encrypted_omex())
     aes_extra = struct.pack("<HHH2sBH", 0x9901, 7, 2, b"AE", 3, 8)
     (DATA / "aes.zip").write_bytes(
         build_zip(name, 99, 0x01, bytes(range(64)), SECRET, aes_extra)
@@ -708,6 +762,11 @@ def verify_encrypted() -> None:
                 pass
             else:
                 raise ValueError(f"{name}: zipfile accepts a wrong password")
+    with zipfile.ZipFile(DATA / "encrypted_omex.zip") as archive:
+        for entry in archive.infolist():
+            content = OMEX_MEMBERS[entry.filename.encode()]
+            if archive.read(entry, pwd=PASSWORD) != content:
+                raise ValueError(f"encrypted_omex.zip: {entry.filename} is not read")
     with zipfile.ZipFile(DATA / "encrypted_descriptor.zip") as archive:
         if not archive.infolist()[0].flag_bits & 0x08:
             raise ValueError("encrypted_descriptor.zip: bit 3 is not set")

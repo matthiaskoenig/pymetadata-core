@@ -28,15 +28,15 @@ const INFLATE_CHUNK: usize = 64 * 1024;
 /// [`Reader::with_max_inflated_size`].
 pub const MAX_INFLATED_SIZE: usize = 1 << 30;
 
-/// A zip archive over borrowed bytes, which inflates a member only when it is asked for.
+/// A zip archive over the bytes it owns, which inflates a member only when it is asked for.
 ///
 /// [`Reader::new`] reads the central directory and nothing else, so listing the contents of an
 /// archive or reading its manifest alone costs no inflation at all. The reader holds no
 /// inflated bytes; caching them belongs to whoever asks for them.
 #[derive(Clone)]
-pub struct Reader<'a> {
+pub struct Reader {
     /// The whole archive.
-    bytes: &'a [u8],
+    bytes: Vec<u8>,
     /// Its members, in the order of the central directory.
     members: Vec<Member>,
     /// The number of uncompressed bytes one member may inflate to.
@@ -45,7 +45,7 @@ pub struct Reader<'a> {
     password: Option<Vec<u8>>,
 }
 
-impl<'a> Reader<'a> {
+impl Reader {
     /// Read the central directory of the archive in `bytes`.
     ///
     /// A member of more than [`MAX_INFLATED_SIZE`] uncompressed bytes is refused;
@@ -55,7 +55,7 @@ impl<'a> Reader<'a> {
     ///
     /// [`OmexError::Malformed`] if the bytes are no zip archive, or if a record of the container
     /// reaches past their end.
-    pub fn new(bytes: &'a [u8]) -> Result<Self, OmexError> {
+    pub fn new(bytes: Vec<u8>) -> Result<Self, OmexError> {
         Self::open(bytes)
     }
 
@@ -69,7 +69,7 @@ impl<'a> Reader<'a> {
     ///
     /// [`OmexError::Malformed`] if the bytes are no zip archive, or if a record of the container
     /// reaches past their end.
-    pub fn with_max_inflated_size(bytes: &'a [u8], limit: usize) -> Result<Self, OmexError> {
+    pub fn with_max_inflated_size(bytes: Vec<u8>, limit: usize) -> Result<Self, OmexError> {
         let mut reader = Self::open(bytes)?;
         reader.max_inflated_size = limit;
         Ok(reader)
@@ -77,9 +77,9 @@ impl<'a> Reader<'a> {
 
     /// Read the central directory of the archive in `bytes`, under the default allowance and
     /// without a password.
-    fn open(bytes: &'a [u8]) -> Result<Self, OmexError> {
-        let eocd = Eocd::find(bytes)?;
-        let members = central::members(bytes, &eocd)?;
+    fn open(bytes: Vec<u8>) -> Result<Self, OmexError> {
+        let eocd = Eocd::find(&bytes)?;
+        let members = central::members(&bytes, &eocd)?;
         Ok(Self {
             bytes,
             members,
@@ -99,7 +99,7 @@ impl<'a> Reader<'a> {
     ///
     /// [`OmexError::Malformed`] if the bytes are no zip archive, or if a record of the container
     /// reaches past their end.
-    pub fn new_with_password(bytes: &'a [u8], password: &[u8]) -> Result<Self, OmexError> {
+    pub fn new_with_password(bytes: Vec<u8>, password: &[u8]) -> Result<Self, OmexError> {
         let mut reader = Self::new(bytes)?;
         reader.password = (!password.is_empty()).then(|| password.to_vec());
         Ok(reader)
@@ -121,16 +121,16 @@ impl<'a> Reader<'a> {
     /// The bytes of `member` as the archive stores them, compressed as they are.
     ///
     /// This is what the writer copies when it takes an untouched member over into a new
-    /// archive, which is why the bytes are borrowed from the input and not copied here.
+    /// archive, which is why the bytes are borrowed from the reader and not copied here.
     ///
     /// # Errors
     ///
     /// [`OmexError::Malformed`] if the member has no local file header, or if the archive is
     /// shorter than the compressed size the central directory declares.
-    pub fn raw(&self, member: &Member) -> Result<&'a [u8], OmexError> {
-        let offset = local::data_offset(self.bytes, member)?;
+    pub fn raw(&self, member: &Member) -> Result<&[u8], OmexError> {
+        let offset = local::data_offset(&self.bytes, member)?;
         let size = as_usize(member.compressed_size, "the compressed size of a member")?;
-        slice_at(self.bytes, offset, size)
+        slice_at(&self.bytes, offset, size)
     }
 
     /// The uncompressed bytes of `member`, checked against its size and its CRC32.
@@ -187,7 +187,7 @@ impl<'a> Reader<'a> {
     }
 }
 
-impl std::fmt::Debug for Reader<'_> {
+impl std::fmt::Debug for Reader {
     /// Show how large the archive is and how many members it has, and not its bytes.
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         formatter
@@ -368,7 +368,7 @@ mod tests {
     #[test]
     fn reads_an_empty_archive() {
         let bytes = end_record(0, 0);
-        let reader = Reader::new(&bytes).unwrap();
+        let reader = Reader::new(bytes).unwrap();
         assert!(reader.members().is_empty());
     }
 
@@ -377,7 +377,7 @@ mod tests {
     fn refuses_bytes_without_a_record() {
         for bytes in [vec![], vec![0; 21], vec![0x55; 1000]] {
             assert!(
-                matches!(Reader::new(&bytes), Err(OmexError::Malformed(_))),
+                matches!(Reader::new(bytes.clone()), Err(OmexError::Malformed(_))),
                 "{} bytes",
                 bytes.len()
             );
@@ -390,7 +390,7 @@ mod tests {
     fn reads_a_record_with_an_inconsistent_comment_length() {
         let mut bytes = end_record(0, 0);
         bytes[20] = 5;
-        let reader = Reader::new(&bytes).unwrap();
+        let reader = Reader::new(bytes).unwrap();
         assert!(reader.members().is_empty());
     }
 
@@ -400,7 +400,7 @@ mod tests {
         for offset in [0, 1, 1000, u32::MAX] {
             let bytes = end_record(1, offset);
             assert!(
-                matches!(Reader::new(&bytes), Err(OmexError::Malformed(_))),
+                matches!(Reader::new(bytes), Err(OmexError::Malformed(_))),
                 "offset {offset}"
             );
         }

@@ -29,8 +29,8 @@ fn fixture(name: &str) -> Vec<u8> {
 /// The one member of a fixture, read under `password`.
 fn read(bytes: &[u8], password: Option<&[u8]>) -> Result<Vec<u8>, OmexError> {
     let reader = match password {
-        Some(password) => Reader::new_with_password(bytes, password)?,
-        None => Reader::new(bytes)?,
+        Some(password) => Reader::new_with_password(bytes.to_vec(), password)?,
+        None => Reader::new(bytes.to_vec())?,
     };
     assert_eq!(reader.members().len(), 1);
     reader.inflate(&reader.members()[0])
@@ -51,7 +51,7 @@ fn reads_a_zipcrypto_member_with_the_right_password() {
 #[test]
 fn checks_the_header_against_the_time_under_a_data_descriptor() {
     let bytes = fixture("encrypted_descriptor.zip");
-    let reader = Reader::new_with_password(&bytes, PASSWORD).unwrap();
+    let reader = Reader::new_with_password(bytes, PASSWORD).unwrap();
     let member = &reader.members()[0];
     assert_eq!(member.flags & 0x09, 0x09);
     assert_ne!(member.crc32 >> 24, u32::from(member.dos_time >> 8));
@@ -100,7 +100,7 @@ fn refuses_an_empty_password_like_no_password() {
 #[test]
 fn combines_a_password_with_an_allowance() {
     let bytes = fixture("encrypted.zip");
-    let mut reader = Reader::new_with_password(&bytes, PASSWORD).unwrap();
+    let mut reader = Reader::new_with_password(bytes, PASSWORD).unwrap();
     reader.set_max_inflated_size(10);
     let error = reader.inflate(&reader.members()[0]).unwrap_err();
     assert!(matches!(error, OmexError::Refused(_)), "{error}");
@@ -121,7 +121,7 @@ fn ignores_a_password_for_a_plain_member() {
 #[test]
 fn raw_keeps_the_encrypted_bytes() {
     let bytes = fixture("encrypted.zip");
-    let reader = Reader::new(&bytes).unwrap();
+    let reader = Reader::new(bytes).unwrap();
     let member = &reader.members()[0];
     let raw = reader.raw(member).unwrap();
     assert_eq!(raw.len() as u64, member.compressed_size);
