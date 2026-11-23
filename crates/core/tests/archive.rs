@@ -334,11 +334,27 @@ fn an_encrypted_archive_needs_its_password() {
         env!("CARGO_MANIFEST_DIR")
     );
     let bytes = std::fs::read(&path).unwrap();
+    // a password which is missing and one which is wrong are their own kind of refusal, so
+    // that a host can tell a member it may not read from a container which has no manifest
     assert!(matches!(
         Archive::from_bytes(&bytes),
-        Err(OmexError::Refused(_))
+        Err(OmexError::Password(_))
     ));
-    assert!(Archive::from_bytes_with_password(&bytes, b"wrong").is_err());
+    assert!(matches!(
+        Archive::from_bytes_with_password(&bytes, b"wrong"),
+        Err(OmexError::Password(_))
+    ));
+    assert_eq!(
+        pymetadata_core::wire::kind(&Archive::from_bytes(&bytes).unwrap_err()),
+        "password"
+    );
+    assert!(
+        Archive::from_bytes(&bytes)
+            .unwrap_err()
+            .to_string()
+            .starts_with("refused: "),
+        "the message is the one hosts have been reading"
+    );
     let mut archive = Archive::from_bytes_with_password(&bytes, b"test1234").unwrap();
     assert_eq!(archive.entry_bytes("./extra.txt").unwrap(), b"extra");
 }

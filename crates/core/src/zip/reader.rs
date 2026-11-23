@@ -140,8 +140,9 @@ impl Reader {
     ///
     /// # Errors
     ///
-    /// [`OmexError::Refused`] if the member inflates to more than this reader allows, or is
-    /// encrypted and the reader has no password or the wrong one,
+    /// [`OmexError::Refused`] if the member inflates to more than this reader allows,
+    /// [`OmexError::Password`] if it is encrypted and the reader has no password or the wrong
+    /// one,
     /// [`OmexError::Unsupported`] if the member uses a compression method other than stored or
     /// deflate (WinZip AES is method 99) or strong encryption, [`OmexError::Malformed`] if the
     /// member cannot be read, does not inflate, or does not match the size and the CRC32 of
@@ -219,14 +220,14 @@ impl Reader {
     ///
     /// # Errors
     ///
-    /// [`OmexError::Refused`] if the member is encrypted and the reader has no password or
+    /// [`OmexError::Password`] if the member is encrypted and the reader has no password or
     /// the wrong one.
     fn plaintext<'a>(&self, member: &Member, raw: &'a [u8]) -> Result<Cow<'a, [u8]>, OmexError> {
         if member.flags & ENCRYPTED == 0 {
             return Ok(Cow::Borrowed(raw));
         }
         let password = self.password.as_deref().ok_or_else(|| {
-            OmexError::Refused(format!(
+            OmexError::Password(format!(
                 "member {:?} is encrypted and the reader was given no password",
                 member.name
             ))

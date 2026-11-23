@@ -302,9 +302,12 @@ omex_write(recompress) -> i32   // the archive bytes
 omex_about() -> i32             // JSON: version, backend
 ```
 
-Error codes mirror the sibling. The core produces four, the kind strings of
-`wire::kind`: `malformed`, `refused`, `unsupported` and `not_found`, one per
-variant of `OmexError`. Two more are host-level and the core never returns
+Error codes mirror the sibling. The core produces five, the kind strings of
+`wire::kind`: `malformed`, `refused`, `unsupported`, `not_found` and
+`password`, one per variant of `OmexError`. A `password` names a member whose
+password is wrong or missing; its message carries the `refused` prefix every
+other refusal carries, so the kind, and in python the class of the exception,
+is what tells a member a caller may not read from every other refusal. Two more are host-level and the core never returns
 them: `internal`, which the wasm host raises for a failure outside of the core
 (a request before `omex_new` or `omex_open`, or a pointer and a length which
 are not a range of the input buffer, which is where `omex_alloc` is and the

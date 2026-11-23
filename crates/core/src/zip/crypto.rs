@@ -97,7 +97,7 @@ impl Keys {
 ///
 /// # Errors
 ///
-/// [`OmexError::Refused`] if the password does not match the header,
+/// [`OmexError::Password`] if the password does not match the header,
 /// [`OmexError::Malformed`] if the member is shorter than its encryption header.
 pub(super) fn decrypt(member: &Member, raw: &[u8], password: &[u8]) -> Result<Vec<u8>, OmexError> {
     let Some((header, data)) = raw.split_at_checked(HEADER_LEN) else {
@@ -116,7 +116,7 @@ pub(super) fn decrypt(member: &Member, raw: &[u8], password: &[u8]) -> Result<Ve
     let mut keys = Keys::new(password);
     let last = header.iter().fold(0, |_, byte| keys.decrypt(*byte));
     if last != check {
-        return Err(OmexError::Refused(format!(
+        return Err(OmexError::Password(format!(
             "the password does not open member {:?}",
             member.name
         )));

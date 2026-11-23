@@ -11,6 +11,17 @@ fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;
     m.add("OmexError", m.py().get_type::<errors::OmexError>())?;
     m.add(
+        "MalformedError",
+        m.py().get_type::<errors::MalformedError>(),
+    )?;
+    m.add("RefusedError", m.py().get_type::<errors::RefusedError>())?;
+    m.add(
+        "UnsupportedError",
+        m.py().get_type::<errors::UnsupportedError>(),
+    )?;
+    m.add("NotFoundError", m.py().get_type::<errors::NotFoundError>())?;
+    m.add("PasswordError", m.py().get_type::<errors::PasswordError>())?;
+    m.add(
         "ArchiveBusyError",
         m.py().get_type::<errors::ArchiveBusyError>(),
     )?;

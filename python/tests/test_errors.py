@@ -6,6 +6,7 @@ import threading
 import pytest
 from conftest import ARCHIVES, DATA
 
+import pymetadata_core
 from pymetadata_core import (
     Archive,
     ArchiveBusyError,
@@ -145,3 +146,63 @@ def test_the_busy_error_is_exported_and_is_a_runtime_error():
     """It is public, and a `RuntimeError` as the bare error of pyo3 was."""
     assert issubclass(ArchiveBusyError, RuntimeError)
     assert ArchiveBusyError.__module__ == "pymetadata_core"
+
+
+def test_every_error_kind_has_its_own_class() -> None:
+    """The kind of a failure is the class, and every class is an `OmexError`."""
+    for name in (
+        "MalformedError",
+        "RefusedError",
+        "UnsupportedError",
+        "NotFoundError",
+        "PasswordError",
+    ):
+        cls = getattr(pymetadata_core, name)
+        assert issubclass(cls, OmexError), name
+        assert issubclass(cls, ValueError), name
+    assert issubclass(pymetadata_core.PasswordError, pymetadata_core.RefusedError)
+    # the busy error says nothing about the archive, so it is deliberately outside
+    assert not issubclass(pymetadata_core.ArchiveBusyError, OmexError)
+    assert issubclass(pymetadata_core.ArchiveBusyError, RuntimeError)
+
+
+def test_the_class_of_an_error_matches_its_message_prefix() -> None:
+    """A host which read the prefix and one which catches the class agree."""
+    archive = Archive.from_bytes(ARCHIVES[2].read_bytes())
+    cases = [
+        (
+            lambda: Archive.from_bytes(b"not a zip"),
+            pymetadata_core.MalformedError,
+            "malformed",
+        ),
+        (
+            lambda: archive.entry_bytes("./nothing.xml"),
+            pymetadata_core.NotFoundError,
+            "not found",
+        ),
+        (
+            lambda: archive.entry_bytes("./manifest.xml"),
+            pymetadata_core.RefusedError,
+            "refused",
+        ),
+    ]
+    for call, expected, prefix in cases:
+        with pytest.raises(expected) as error:
+            call()
+        assert str(error.value).startswith(prefix), str(error.value)
+
+
+def test_a_wrong_password_is_a_password_error() -> None:
+    """The distinction a host needs: a password it may not pass, not a broken archive."""
+    data = (DATA / "zip" / "encrypted_omex.zip").read_bytes()
+    with pytest.raises(pymetadata_core.PasswordError) as missing:
+        Archive.from_bytes(data)
+    with pytest.raises(pymetadata_core.PasswordError) as wrong:
+        Archive.from_bytes(data, password=b"wrong")
+    for error in (missing, wrong):
+        assert "password" in str(error.value)
+        # the message keeps the prefix every other refusal carries
+        assert str(error.value).startswith("refused: ")
+    # a container which is no archive is a different class, which is the point
+    with pytest.raises(pymetadata_core.MalformedError):
+        Archive.from_bytes(b"PK\x05\x06" + bytes(18))

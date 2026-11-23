@@ -10,8 +10,41 @@ class OmexError(ValueError):
     """An archive, entry or location the core cannot handle.
 
     A subclass of `ValueError`, so code which catches `ValueError` keeps working.
-    The message starts with the kind of the failure: `malformed`, `refused`,
-    `unsupported` or `not found`.
+    The kind of the failure is the class of the exception: `MalformedError`,
+    `RefusedError`, `UnsupportedError`, `NotFoundError` or `PasswordError`, each a
+    subclass of this one. The message starts with the same kind in words, so
+    `malformed`, `refused`, `unsupported` or `not found`, and a host which read
+    that prefix keeps working: catch the class instead.
+    """
+
+class MalformedError(OmexError):
+    """Bytes which are no archive, zip container or manifest."""
+
+class RefusedError(OmexError):
+    """Input the core refuses on purpose, e.g. a location outside of the archive.
+
+    A wrong or missing password is the subclass `PasswordError`, although its
+    message carries the same `refused` prefix.
+    """
+
+class UnsupportedError(OmexError):
+    """Input which is valid and uses a feature the core does not support.
+
+    Raised e.g. for a member under a compression method other than stored or
+    deflate, such as bzip2, and for WinZip AES.
+    """
+
+class NotFoundError(OmexError):
+    """An entry which does not exist, so a missing entry is not a broken archive."""
+
+class PasswordError(RefusedError):
+    """A member whose password is wrong or missing.
+
+    A refusal, so a subclass of `RefusedError` and of `OmexError`. It exists
+    because a host has to tell a member it may not read from one which is not
+    there: the message carries the `refused` prefix of every other refusal, and
+    this class is what separates them. Being raised proves that the member is in
+    the container.
     """
 
 class ArchiveBusyError(RuntimeError):
@@ -20,6 +53,11 @@ class ArchiveBusyError(RuntimeError):
     Inflating an entry, setting an entry and writing the archive run without the
     GIL, and an archive is used by one call at a time. Use one `Archive` per
     thread, or wait for the call to return.
+
+    A `RuntimeError` and deliberately not an `OmexError`: it says nothing about
+    the archive, which is intact, but about how it is being used, so `except
+    OmexError` does not catch it and no code which handles a broken archive
+    swallows it by accident.
     """
 
 @final

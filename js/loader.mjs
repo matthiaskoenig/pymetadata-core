@@ -52,9 +52,10 @@ const decoder = new TextDecoder();
 /**
  * The error of a failed call.
  *
- * `kind` is what a page routes on. The module reports `malformed`, `refused`, `unsupported` and
- * `not_found` for the archive, `internal` for a request it cannot carry out and `panic` for a
- * bug of the build. The loader adds `trap`, a trap which left no message, and `spent`, a call
+ * `kind` is what a page routes on. The module reports `malformed`, `refused`, `unsupported`,
+ * `not_found` and `password` for the archive, `internal` for a request it cannot carry out and
+ * `panic` for a bug of the build. A `password` is a refusal whose message carries the `refused`
+ * prefix, so the kind is what separates a member a caller may not read from every other refusal. The loader adds `trap`, a trap which left no message, and `spent`, a call
  * on an instance which trapped before.
  */
 export class OmexError extends Error {
