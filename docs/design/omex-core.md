@@ -181,12 +181,15 @@ class Archive:
     @staticmethod
     def from_bytes(data: bytes, password: bytes | None = None) -> Archive: ...
     @property
-    def entries(self) -> list[tuple[str, str, bool]]: ...   # location, format, master
+    def entries(self) -> list[tuple[str, str, bool]]: ...  # location, format, master
     def manifest_xml(self) -> str: ...
     def entry_bytes(self, location: str) -> bytes: ...
-    def set_entry(self, location: str, format: str, master: bool, data: bytes) -> None: ...
+    def set_entry(
+        self, location: str, format: str, master: bool, data: bytes
+    ) -> None: ...
     def remove_entry(self, location: str) -> bool: ...
     def to_bytes(self, recompress: bool = False, level: int = 9) -> bytes: ...
+
 
 def normalize_location(location: str) -> str: ...
 def guess_format(suffix: str, head: bytes = b"") -> str: ...
@@ -195,6 +198,12 @@ def lookup_format(format_key: str) -> str: ...
 
 Errors from the core are raised as `pymetadata_core.OmexError`, a subclass of
 `ValueError`, so a caller which catches `ValueError` today keeps working.
+
+Opening, inflating an entry, `set_entry` and writing run without the GIL, so
+another thread can work while a large archive is written. An `Archive` is in use by one call at
+a time: a second thread which uses it meanwhile gets
+`pymetadata_core.ArchiveBusyError` (a `RuntimeError`) saying so, and the rule is
+one `Archive` per thread.
 
 What `pymetadata` does with it (the contract, implemented in that repository):
 `pymetadata.omex.Omex` keeps its public API unchanged, which is
@@ -208,6 +217,27 @@ is asked for into the temporary directory on first ask, and `to_omex` calls
 `Archive.to_bytes`. `pymetadata` gains a runtime dependency on
 `pymetadata-core` and stops being a pure-python wheel. `tests/test_omex.py`
 is the acceptance gate for the swap and does not change.
+
+### Differences from pymetadata
+
+The core keeps what an archive says, where `pymetadata` rewrites it on the way
+through its temporary directory. The hard swap changes these observable
+behaviors, so `tests/test_omex.py` of `pymetadata` has to be updated for them,
+and none of them is a regression of the core. Found by the cross-checks of
+`python/tests/test_roundtrip.py` against `pymetadata` 0.8.3 on
+`iCGB21FR.omex`.
+
+- A manifest entry without a zip member (`./iCGB21FR_memote.html`, where the zip
+  holds `iCGB21_memote.html`): the core keeps it as an entry without bytes,
+  `pymetadata` drops it, as its manifest is built from the extracted files.
+- Files the manifest does not list: the core keeps them in the order of the zip,
+  `pymetadata` sorts them by location, after the listed entries.
+- The format of `.` and `./manifest.xml`: the core keeps the one the file
+  declares (`https://identifiers.org/...` in that archive), `pymetadata` always
+  writes its own default (`http://identifiers.org/...`).
+- Threads: an `Archive` shared between threads can raise `ArchiveBusyError` while
+  another thread inflates an entry, sets an entry or writes it, where pure python `pymetadata`
+  never did. One `Archive` per thread avoids it.
 
 ### The wasm host
 

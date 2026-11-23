@@ -42,10 +42,15 @@ def rust_str(text: str) -> str:
 def main() -> None:
     """Write the Rust table and the JSON fixture."""
     # `__members__` includes the aliases (`RDF` for `XML`), like `hasattr` in `lookup_format`
-    pairs = {name.lower(): str(member.value) for name, member in EntryFormat.__members__.items()}
+    pairs = {
+        name.lower(): str(member.value)
+        for name, member in EntryFormat.__members__.items()
+    }
 
     lines = [HEADER]
-    lines.append("/// Every format key (the lower case name of an `EntryFormat` member) and its URI.")
+    lines.append(
+        "/// Every format key (the lower case name of an `EntryFormat` member) and its URI."
+    )
     lines.append("pub(crate) const FORMATS: &[(&str, &str)] = &[")
     for key, uri in pairs.items():
         lines.append(f"    ({rust_str(key)}, {rust_str(uri)}),")

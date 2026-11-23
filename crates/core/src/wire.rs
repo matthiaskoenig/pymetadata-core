@@ -15,8 +15,8 @@ use crate::manifest::Entry;
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct ManifestResponse {
     /// The entries, each as `{"location": ..., "format": ..., "master": ...}`. These keys are the
-    /// field names of [`Entry`], which is serialized as it is: do not rename them as if they were
-    /// internal.
+    /// field names of [`Entry`], which is serialized as it is, so renaming a field there changes
+    /// the wire format.
     pub entries: Vec<Entry>,
 }
 
@@ -36,7 +36,7 @@ pub struct SetEntryRequest {
     #[serde(default)]
     pub master: bool,
     /// Number of content bytes which follow the header. It is a `usize`, so on `wasm32` a value
-    /// above 4 GiB fails to deserialize, which is the bound of the target's pointer width.
+    /// above `u32::MAX`, the bound of the target's pointer width, fails to deserialize.
     pub len: usize,
 }
 
@@ -114,8 +114,10 @@ mod tests {
             r#"{"location":"./a.xml","format":"http://example.org/f","master":true,"len":0}"#,
         )
         .unwrap();
+        assert_eq!(request.location, "./a.xml");
         assert_eq!(request.format.as_deref(), Some("http://example.org/f"));
         assert!(request.master);
+        assert_eq!(request.len, 0);
         let request: SetEntryRequest =
             serde_json::from_str(r#"{"location":"./a.xml","format":null,"len":1}"#).unwrap();
         assert_eq!(request.format, None);

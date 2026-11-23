@@ -48,7 +48,9 @@ def members(path: Path) -> list[dict[str, object]]:
 
 def main() -> None:
     """Write `members.json` for every archive of the corpus."""
-    expected = {path.name: members(path) for path in sorted((DATA / "omex").glob("*.omex"))}
+    expected = {
+        path.name: members(path) for path in sorted((DATA / "omex").glob("*.omex"))
+    }
     if not expected:
         raise SystemExit(f"no archive in {DATA / 'omex'}")
     (DATA / "members.json").write_text(

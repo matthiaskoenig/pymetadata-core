@@ -4,3 +4,6 @@ js/runtime/
 js/node_modules/
 .superpowers/
 dist/
+.venv/
+.pytest_cache/
+.ruff_cache/

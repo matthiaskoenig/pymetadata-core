@@ -1,8 +1,8 @@
 [workspace]
 resolver = "2"
-# `crates/python` and `crates/wasm` are added by the tasks which create them.
-members = ["crates/core"]
-# `pymetadata-python` will be a member but not a default one. pyo3 refuses to build against an
+# `crates/wasm` is added by the task which creates it.
+members = ["crates/core", "crates/python"]
+# `pymetadata-python` is a member but not a default one. pyo3 refuses to build against an
 # interpreter older than its abi3 floor, so a crate in the default set would make a newer python
 # toolchain the price of `cargo test` on the core, for a binding most contributors never touch,
 # and that price is a hard build error and not a skipped crate. The crates in this list are what
@@ -35,6 +35,8 @@ roxmltree = { version = "0.21", default-features = false, features = ["std"] }
 serde = { version = "1", features = ["derive"] }
 flate2 = { version = "1", default-features = false, features = ["zlib-rs"] }
 crc32fast = { version = "1", default-features = false }
+# the python binding, abi3 with the floor of `pymetadata` (python 3.11)
+pyo3 = { version = "0.30", features = ["abi3-py311"] }
 # a development dependency only: the tests compare the inflated bytes against the digests which
 # `scripts/members_oracle.py` takes with python's `zipfile`
 sha2 = { version = "0.10", default-features = false }

@@ -1,0 +1,48 @@
+[build-system]
+requires = ["maturin>=1.16,<2"]
+build-backend = "maturin"
+
+[project]
+name = "pymetadata-core"
+dynamic = ["version"]
+description = "Lazy reading and writing of COMBINE archives (OMEX), a Rust core for pymetadata"
+readme = "python/README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Matthias König" }]
+# the floor of pymetadata, and the abi3 floor of the extension
+requires-python = ">=3.11"
+keywords = ["COMBINE", "OMEX", "SBML", "SED-ML", "systems biology"]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Intended Audience :: Science/Research",
+  "Operating System :: MacOS",
+  "Operating System :: Microsoft :: Windows",
+  "Operating System :: POSIX :: Linux",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
+  "Programming Language :: Rust",
+  "Topic :: Scientific/Engineering :: Bio-Informatics",
+  "Typing :: Typed",
+]
+
+[project.urls]
+Repository = "https://github.com/matthiaskoenig/pymetadata-core"
+
+[dependency-groups]
+dev = ["pytest>=9.2,<10", "pymetadata>=0.8.3", "ruff==0.17.5"]
+
+[tool.maturin]
+manifest-path = "crates/python/Cargo.toml"
+python-source = "python"
+module-name = "pymetadata_core._core"
+features = ["extension-module"]
+
+[tool.pytest.ini_options]
+testpaths = ["python/tests"]
+# a warning is a failure, so a deprecation of pyo3 or of pymetadata shows up in the tests
+filterwarnings = ["error"]
