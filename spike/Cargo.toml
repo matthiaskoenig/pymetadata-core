@@ -1,0 +1,24 @@
+[package]
+name = "spike"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+zip = { version = "9.8.2", default-features = false, features = ["deflate-flate2"] }
+flate2 = { version = "1.1.11", default-features = false }
+roxmltree = { version = "0.21.2", default-features = false, features = ["std"] }
+
+[features]
+default = ["miniz"]
+miniz = ["flate2/rust_backend"]
+zlibrs = ["flate2/zlib-rs"]
+
+[[bin]]
+name = "spike"
+path = "src/main.rs"
+
+[lib]
+name = "spike_wasm"
+path = "src/lib.rs"
+crate-type = ["cdylib", "rlib"]

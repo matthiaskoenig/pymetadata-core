@@ -1,0 +1,23 @@
+[package]
+name = "spike2"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+flate2 = { version = "1.1.11", default-features = false }
+roxmltree = { version = "0.21.2", default-features = false, features = ["std"] }
+crc32fast = { version = "1.5.5", default-features = false }
+
+[features]
+default = ["miniz"]
+miniz = ["flate2/rust_backend"]
+zlibrs = ["flate2/zlib-rs"]
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[profile.release]
+opt-level = 3
+lto = true
+panic = "abort"
