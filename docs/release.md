@@ -27,7 +27,7 @@ How a release of `pymetadata-core` is made. A tag makes all of it: the wheels an
     ```bash
     uv venv --python 3.13 /tmp/release-check && uv pip install --python /tmp/release-check/bin/python --refresh --upgrade "pymetadata-core==x.y.z"
     /tmp/release-check/bin/python -c "import pymetadata_core; print(pymetadata_core.__version__)"
-    cd /tmp && npm init -y && npm install @matthiaskoenig/pymetadata-core@x.y.z
+    cd /tmp && npm init -y && npm install pymetadata-core@x.y.z
     ```
 
     The example of `js/README.md` runs as it stands.

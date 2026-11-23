@@ -30,7 +30,7 @@ A browser has no python at all, so the same core has to run as WebAssembly.
 A new repository, `pymetadata-core`, holding a Rust workspace with the OMEX
 archive: a reader, a writer, the manifest and the format table. It ships two
 artifacts, a python wheel (`pymetadata-core`) and a wasm module with a
-dependency-free JavaScript loader (`@matthiaskoenig/pymetadata-core` on npm).
+dependency-free JavaScript loader (`pymetadata-core` on npm).
 The layout follows the sibling packages `pkpdutils-core` and `sbmlsim-core`.
 
 `pymetadata` then consumes the wheel: `pymetadata.omex` becomes a thin python
