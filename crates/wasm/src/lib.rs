@@ -19,11 +19,12 @@
 //! Every export but the three of the buffers returns 0 for an answer and 1 for a failure, and
 //! publishes exactly one output either way: the answer, or the JSON of
 //! [`pymetadata_core::wire::ErrorResponse`], which names the kind of the failure. The seven
-//! kinds are the five of [`pymetadata_core::wire::kind`] - `malformed`, `refused`,
-//! `unsupported`, `not_found` and `password` - and the two of this host,
+//! kinds are five of the six of [`pymetadata_core::wire::kind`] - `malformed`, `refused`,
+//! `unsupported`, `not_found` and `password`, while `io` belongs to a host which writes
+//! somewhere and this one writes into memory - and the two of this host,
 //! [`calls::INTERNAL`] and [`calls::PANIC`]. The code is
 //! the bit a page branches on and the kind is what it routes on, which is the layout the sibling
-//! hosts of `pkpdutils-core` and `sbmlsim-core` speak. The python binding reports the same four
+//! hosts of `pkpdutils-core` and `sbmlsim-core` speak. The python binding reports the same
 //! failures of the core, but as the class of its exception and as the `Display` prefix of it,
 //! not as a field of its own, and neither of those strings is one of these: the prefix of a
 //! [`pymetadata_core::OmexError::NotFound`] reads `not found`, where the kind on the wire is

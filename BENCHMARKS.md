@@ -270,3 +270,28 @@ this document supersedes it.
   `iCGB21FR.omex`, against the spike's 71 ms and 126 ms. At level 9, which `to_omex` uses, the
   core takes 126 ms and `zipfile` 246 ms (2.0x), or 1.8x against `to_omex` at 230 ms: python at
   level 9 is twice as slow as at level 6, and the core 1.7x, so the factor depends on the level.
+
+## The write which does not hold the archive
+
+`Archive::write_into`, and `Archive.to_path` in python, write into a sink instead of building
+the archive in a `Vec` (#12). This is a measurement of memory rather than of time, so it does
+not follow the protocol above: one archive, one run, the peak RSS of the process
+(`ru_maxrss`) and the wall clock of the call, python 3.14 on the machine below.
+
+The archive is 268.5 MB with one incompressible member, opened with `Archive.from_bytes`, which
+leaves the process at 525.7 MB: the `bytes` of the file and the copy the reader owns.
+
+| write | peak RSS it adds | time |
+|---|---|---|
+| `to_path` | 0.0 MB | 46 ms |
+| `to_bytes` plus `Path.write_bytes` | 256.5 MB | 163 ms |
+
+The two files are byte for byte the same. The streamed write adds nothing measurable because
+nothing of the archive is held: each member goes into the buffered file as it is produced, and
+what stays is the central directory. It is also three times faster here, because the bytes are
+copied once into the file instead of into a `Vec`, then into a python `bytes`, then into the
+file.
+
+What this does not change is the read: `from_bytes` takes a slice and copies it, so an opened
+archive still holds its container, which is the 525.7 MB above. That is a separate cost and a
+separate change.

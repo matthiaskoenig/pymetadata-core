@@ -2,6 +2,7 @@
 
 import inspect
 import io
+import random
 import struct
 import tracemalloc
 import zipfile
@@ -518,3 +519,82 @@ def test_has_manifest_raises_for_a_file_it_cannot_read(tmp_path: Path) -> None:
         pymetadata_core.has_manifest(tmp_path / "nothing.omex")
     with pytest.raises(OSError):
         pymetadata_core.has_manifest(tmp_path)
+
+
+def test_to_path_writes_what_to_bytes_returns(
+    archive_path: Path, tmp_path: Path
+) -> None:
+    """The file holds the bytes `to_bytes` gives, for every archive of the corpus."""
+    data = archive_path.read_bytes()
+    in_memory = Archive.from_bytes(data).to_bytes()
+    target = tmp_path / "streamed.omex"
+    written = Archive.from_bytes(data).to_path(target)
+
+    assert target.read_bytes() == in_memory
+    assert written == len(in_memory)
+
+
+def test_to_path_recompresses_as_to_bytes_does(tmp_path: Path) -> None:
+    """The level reaches the stream, and both writes agree at every level."""
+    data = ARCHIVES[0].read_bytes()
+    for level in (0, 6, 9):
+        target = tmp_path / f"level{level}.omex"
+        Archive.from_bytes(data).to_path(target, recompress=True, level=level)
+        assert target.read_bytes() == Archive.from_bytes(data).to_bytes(
+            recompress=True, level=level
+        ), level
+
+
+def test_to_path_does_not_hold_the_archive(tmp_path: Path) -> None:
+    """The point of the call: writing a file does not cost the whole archive.
+
+    The archive is built so that its members are too large to be an accident of
+    the measurement: `to_bytes` has to hold all of them, where `to_path` holds
+    the one it is writing.
+    """
+    archive = Archive()
+    block = bytes(random.getrandbits(8) for _ in range(1 << 16)) * 64  # 4 MiB
+    for index in range(8):
+        archive.set_entry(
+            f"./data{index}.bin",
+            "https://purl.org/NET/mediatypes/application/octet-stream",
+            False,
+            block,
+        )
+    target = tmp_path / "big.omex"
+
+    tracemalloc.start()
+    archive.to_path(target)
+    streamed_peak = tracemalloc.get_traced_memory()[1]
+    tracemalloc.stop()
+    tracemalloc.start()
+    data = archive.to_bytes()
+    memory_peak = tracemalloc.get_traced_memory()[1]
+    tracemalloc.stop()
+
+    assert target.read_bytes() == data
+    # python never sees the archive of the streamed write, only the bytes handed in
+    assert streamed_peak * 4 < memory_peak, (streamed_peak, memory_peak)
+    assert target.stat().st_size > 8 * len(block) // 2
+
+
+def test_to_path_raises_os_error_for_a_file_it_cannot_write(tmp_path: Path) -> None:
+    """A sink which cannot take the bytes is an `OSError`, not an `OmexError`."""
+    archive = Archive.from_bytes(ARCHIVES[0].read_bytes())
+    missing = tmp_path / "no" / "such" / "directory" / "out.omex"
+    with pytest.raises(OSError) as error:
+        archive.to_path(missing)
+    assert not isinstance(error.value, OmexError)
+    # the archive is unharmed: the same write into a path which exists works
+    target = tmp_path / "out.omex"
+    assert archive.to_path(target) == target.stat().st_size
+
+
+def test_to_path_truncates_a_file_which_is_there(tmp_path: Path) -> None:
+    """The file is the archive afterwards, not the archive behind older bytes."""
+    target = tmp_path / "out.omex"
+    target.write_bytes(b"x" * (1 << 20))
+    archive = Archive.from_bytes(ARCHIVES[0].read_bytes())
+    archive.to_path(target)
+
+    assert target.read_bytes() == archive.to_bytes()

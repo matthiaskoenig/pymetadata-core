@@ -243,13 +243,13 @@ fn a_copied_member_keeps_its_external_attributes() {
         .find(|member| member.name == "streamed.txt")
         .unwrap();
     assert_eq!(member.external_attributes, EXECUTABLE, "the fixture");
-    let mut writer = Writer::new();
+    let mut writer = Writer::new(Vec::new());
     writer
         .add_raw("streamed.txt", member, input.raw(member).unwrap())
         .unwrap();
     writer.add_stored("stored.txt", b"stored").unwrap();
     writer.add_deflated("deflated.txt", b"deflated", 6).unwrap();
-    let output = Reader::new(writer.finish()).unwrap();
+    let output = Reader::new(writer.into_bytes().unwrap()).unwrap();
     let attributes: Vec<u32> = output
         .members()
         .iter()
@@ -520,12 +520,12 @@ fn an_encrypted_member_without_a_password_is_refused() {
 #[test]
 fn the_writer_adds_a_stored_and_a_deflated_member() {
     let data = b"the content of a member, repeated to give deflate something to do. ".repeat(20);
-    let mut writer = Writer::new();
+    let mut writer = Writer::new(Vec::new());
     writer.add_stored("stored.txt", &data).unwrap();
     writer.add_deflated("deflated.txt", &data, 6).unwrap();
     writer.add_stored("empty.bin", b"").unwrap();
     writer.add_deflated("empty.txt", b"", 6).unwrap();
-    let reader = Reader::new(writer.finish()).unwrap();
+    let reader = Reader::new(writer.into_bytes().unwrap()).unwrap();
     let names: Vec<&str> = reader
         .members()
         .iter()
@@ -564,7 +564,7 @@ fn add_raw_refuses_an_encrypted_member() {
         .find(|member| member.name == "extra.txt")
         .unwrap();
     let raw = reader.raw(member).unwrap();
-    let mut writer = Writer::new();
+    let mut writer = Writer::new(Vec::new());
     assert!(matches!(
         writer.add_raw("extra.txt", member, raw),
         Err(OmexError::Unsupported(_))
@@ -582,7 +582,7 @@ fn add_raw_refuses_bytes_of_another_length() {
         .find(|member| member.name == "README.md")
         .unwrap();
     let raw = reader.raw(member).unwrap();
-    let mut writer = Writer::new();
+    let mut writer = Writer::new(Vec::new());
     assert!(matches!(
         writer.add_raw("README.md", member, &raw[1..]),
         Err(OmexError::Refused(_))
@@ -607,7 +607,7 @@ fn add_raw_refuses_a_stored_member_of_two_sizes() {
         dos_date: STAMP.1,
         external_attributes: REGULAR_FILE,
     };
-    let mut writer = Writer::new();
+    let mut writer = Writer::new(Vec::new());
     let error = writer.add_raw("stored.bin", &member, b"abc").unwrap_err();
     let message = error.to_string();
     assert!(matches!(error, OmexError::Malformed(_)), "{message}");
@@ -618,7 +618,13 @@ fn add_raw_refuses_a_stored_member_of_two_sizes() {
         ..member
     };
     writer.add_raw("stored.bin", &member, b"abc").unwrap();
-    assert_eq!(Reader::new(writer.finish()).unwrap().members().len(), 1);
+    assert_eq!(
+        Reader::new(writer.into_bytes().unwrap())
+            .unwrap()
+            .members()
+            .len(),
+        1
+    );
 }
 
 /// A member under WinZip AES is not written at all: no plaintext for it, and no copy either.
@@ -638,7 +644,7 @@ fn an_aes_member_is_not_written() {
     );
     let raw = input.raw(member).unwrap();
     // a copy would carry the encryption flag of the member into an archive of plain members
-    let mut writer = Writer::new();
+    let mut writer = Writer::new(Vec::new());
     assert!(matches!(
         writer.add_raw(&member.name, member, raw),
         Err(OmexError::Unsupported(_))
@@ -663,7 +669,7 @@ fn an_aes_member_is_not_written() {
 /// A name longer than the field which holds it is refused and not truncated.
 #[test]
 fn refuses_a_name_longer_than_the_field_which_holds_it() {
-    let mut writer = Writer::new();
+    let mut writer = Writer::new(Vec::new());
     let name = "a".repeat(usize::from(u16::MAX) + 1);
     assert!(matches!(
         writer.add_stored(&name, b"x"),
@@ -671,13 +677,19 @@ fn refuses_a_name_longer_than_the_field_which_holds_it() {
     ));
     let name = "a".repeat(usize::from(u16::MAX));
     writer.add_stored(&name, b"x").unwrap();
-    assert_eq!(Reader::new(writer.finish()).unwrap().members().len(), 1);
+    assert_eq!(
+        Reader::new(writer.into_bytes().unwrap())
+            .unwrap()
+            .members()
+            .len(),
+        1
+    );
 }
 
 /// A compression level no deflate knows is refused, and never reaches the compressor.
 #[test]
 fn refuses_a_compression_level_no_deflate_knows() {
-    let mut writer = Writer::new();
+    let mut writer = Writer::new(Vec::new());
     assert!(matches!(
         writer.add_deflated("a.txt", b"x", 10),
         Err(OmexError::Refused(_))
@@ -689,9 +701,9 @@ fn refuses_a_compression_level_no_deflate_knows() {
     ));
     // the whole range deflate knows is written and read back
     for level in 0..=9 {
-        let mut writer = Writer::new();
+        let mut writer = Writer::new(Vec::new());
         writer.add_deflated("a.txt", b"content", level).unwrap();
-        let reader = Reader::new(writer.finish()).unwrap();
+        let reader = Reader::new(writer.into_bytes().unwrap()).unwrap();
         assert_eq!(reader.inflate(&reader.members()[0]).unwrap(), b"content");
     }
 }
@@ -723,11 +735,11 @@ fn writes_the_zip64_end_record_above_the_member_count_field() {
 
 /// An archive of `count` stored members, named after their index.
 fn write_members(count: u32) -> Vec<u8> {
-    let mut writer = Writer::new();
+    let mut writer = Writer::new(Vec::new());
     for index in 0..count {
         writer.add_stored(&format!("{index}.bin"), b"").unwrap();
     }
-    writer.finish()
+    writer.into_bytes().unwrap()
 }
 
 /// Does the archive hold a zip64 end-of-central-directory record?
@@ -865,4 +877,104 @@ fn the_32_bit_record_keeps_what_fits_under_zip64() {
     assert!(cd_size > 0 && cd_size < u32::MAX, "{cd_size}");
     assert!(cd_offset > 0 && cd_offset < u32::MAX, "{cd_offset}");
     assert_eq!(u64::from(cd_offset) + u64::from(cd_size), (end - 76) as u64);
+}
+
+/// A streamed archive is the archive `to_bytes` returns, byte for byte.
+#[test]
+fn the_stream_writes_what_to_bytes_writes() {
+    for name in ARCHIVES {
+        let bytes = fixture(&format!("omex/{name}"));
+        let mut archive = Archive::from_bytes(&bytes).unwrap();
+        let in_memory = archive.to_bytes().unwrap();
+
+        let mut archive = Archive::from_bytes(&bytes).unwrap();
+        let mut streamed = Vec::new();
+        let written = archive.write_into(&mut streamed).unwrap();
+
+        assert_eq!(streamed, in_memory, "{name}");
+        assert_eq!(written, streamed.len() as u64, "{name}: the count of bytes");
+    }
+}
+
+/// The same holds for a write which deflates everything again, and for an edited archive.
+#[test]
+fn the_stream_writes_what_to_bytes_writes_for_a_changed_archive() {
+    let bytes = fixture("omex/CompModels.omex");
+    let edit = |archive: &mut Archive| {
+        archive
+            .set_entry(
+                Entry::new("./added.txt", "text/plain", false).unwrap(),
+                b"content".to_vec(),
+            )
+            .unwrap();
+        archive.remove_entry("./manifest.xml").ok();
+    };
+
+    let mut first = Archive::from_bytes(&bytes).unwrap();
+    edit(&mut first);
+    let in_memory = first.to_bytes_recompressed(6).unwrap();
+    let mut second = Archive::from_bytes(&bytes).unwrap();
+    edit(&mut second);
+    let mut streamed = Vec::new();
+    second.write_into_recompressed(&mut streamed, 6).unwrap();
+
+    assert_eq!(streamed, in_memory);
+}
+
+/// An archive built from scratch streams as well, and a reader opens what was streamed.
+#[test]
+fn a_streamed_archive_is_read_back() {
+    let mut archive = Archive::new();
+    archive
+        .set_entry(
+            Entry::new("./model.xml", "application/xml", true).unwrap(),
+            b"<sbml/>".to_vec(),
+        )
+        .unwrap();
+    let mut streamed = Vec::new();
+    archive.write_into(&mut streamed).unwrap();
+
+    let mut read = Archive::from_bytes(&streamed).unwrap();
+    assert_eq!(read.entry_bytes("./model.xml").unwrap(), b"<sbml/>");
+}
+
+/// A sink which refuses the bytes is an `Io` error, which no other failure is.
+#[test]
+fn a_sink_which_fails_is_an_io_error() {
+    /// A sink which takes `budget` bytes and fails afterwards.
+    struct Tight {
+        budget: usize,
+    }
+
+    impl std::io::Write for Tight {
+        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+            if buf.len() > self.budget {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::StorageFull,
+                    "no space left on device",
+                ));
+            }
+            self.budget -= buf.len();
+            Ok(buf.len())
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    let bytes = fixture("omex/CompModels.omex");
+    let mut archive = Archive::from_bytes(&bytes).unwrap();
+    let error = archive.write_into(Tight { budget: 64 }).unwrap_err();
+
+    assert!(matches!(error, OmexError::Io(_)), "{error:?}");
+    assert!(error.to_string().starts_with("io: "), "{error}");
+    assert!(
+        error.to_string().contains("no space left"),
+        "the error of the sink is kept: {error}"
+    );
+    // the archive is unchanged: the same write into a sink which takes the bytes works
+    let mut good = Vec::new();
+    archive.write_into(&mut good).unwrap();
+    assert_eq!(good, archive.to_bytes().unwrap());
 }

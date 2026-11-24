@@ -1,5 +1,9 @@
 //! The `Archive` class and the functions of the extension module.
 
+use std::fs::File;
+use std::io::{BufWriter, Write};
+use std::path::PathBuf;
+
 use pymetadata_core::{Archive as CoreArchive, Entry, OmexError as CoreError};
 use pyo3::prelude::*;
 use pyo3::types::PyBytes;
@@ -275,6 +279,50 @@ impl Archive {
             })
             .map_err(to_py_err)?;
         Ok(PyBytes::new(py, &bytes))
+    }
+
+    /// Write the archive to the file at `path`, without holding it in memory.
+    ///
+    /// This is `to_bytes` into a file: the members go into it as they are produced, so what a
+    /// write needs is the largest member and not the whole archive. The file holds the same
+    /// bytes `to_bytes` returns for the same content, so the two are interchangeable except
+    /// for where the archive ends up.
+    ///
+    /// Without `recompress`, every entry which was not replaced is copied as the compressed
+    /// blob it is. With it, every entry is deflated again at `level` (0 to 9); a level outside
+    /// of that range is an `OmexError`.
+    ///
+    /// The file is created, or truncated if it exists. A write which fails part way leaves
+    /// what it had written behind, as a failed write of a file does, and raises `OSError`:
+    /// a full disk or a path which cannot be written is nothing about the archive.
+    ///
+    /// Returns the number of bytes written.
+    #[pyo3(signature = (path, recompress=false, level=9))]
+    #[pyo3(text_signature = "(path, recompress=False, level=9)")]
+    fn to_path(
+        slf: &Bound<'_, Self>,
+        path: PathBuf,
+        recompress: bool,
+        level: i128,
+    ) -> PyResult<u64> {
+        let py = slf.py();
+        let level = level_of(level)?;
+        let mut this = slf.try_borrow_mut().map_err(busy)?;
+        let inner = &mut this.inner;
+        py.detach(|| {
+            let file = File::create(&path)?;
+            let mut sink = BufWriter::new(file);
+            let written = if recompress {
+                inner.write_into_recompressed(&mut sink, level)
+            } else {
+                inner.write_into(&mut sink)
+            }
+            .map_err(to_py_err)?;
+            // the buffer holds the end of the archive until it is flushed, and a flush which
+            // fails is a failed write: the file is not the archive then
+            sink.flush()?;
+            Ok(written)
+        })
     }
 
     /// Show how many entries there are.

@@ -58,9 +58,11 @@ pub struct ErrorResponse {
 ///   wrong or missing from every other refusal. Its message carries the `refused` prefix, so
 ///   this kind is the only way to tell the two apart without reading the text.
 ///
-/// A fifth kind, `internal`, is not returned here: no [`OmexError`] is an internal failure, and
-/// a host which fails for a reason outside of the core (no archive open, a panic) reports that
-/// itself.
+/// - `io` names [`OmexError::Io`], the sink of a write which did not take the bytes. Only a host
+///   which writes somewhere can meet it: a write into memory cannot fail this way.
+///
+/// The kind `internal` is not returned here: no [`OmexError`] is an internal failure, and a host
+/// which fails for a reason outside of the core (no archive open, a panic) reports that itself.
 pub fn kind(error: &OmexError) -> &'static str {
     match error {
         OmexError::Malformed(_) => "malformed",
@@ -68,6 +70,7 @@ pub fn kind(error: &OmexError) -> &'static str {
         OmexError::Unsupported(_) => "unsupported",
         OmexError::NotFound(_) => "not_found",
         OmexError::Password(_) => "password",
+        OmexError::Io(_) => "io",
     }
 }
 
@@ -152,6 +155,7 @@ mod tests {
             (OmexError::Unsupported("u".into()), "unsupported"),
             (OmexError::NotFound("n".into()), "not_found"),
             (OmexError::Password("p".into()), "password"),
+            (OmexError::Io("i".into()), "io"),
         ];
         for (error, expected) in &cases {
             assert_eq!(kind(error), *expected);
