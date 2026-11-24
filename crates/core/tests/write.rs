@@ -501,11 +501,19 @@ fn a_member_of_an_unsupported_method_is_copied() {
 #[test]
 fn an_encrypted_member_without_a_password_is_refused() {
     let mut archive = Archive::from_bytes(&encrypted_member_archive()).unwrap();
-    assert!(matches!(archive.to_bytes(), Err(OmexError::Refused(_))));
+    // the missing password is its own kind of refusal, and the message keeps the prefix of one
+    assert!(matches!(archive.to_bytes(), Err(OmexError::Password(_))));
     assert!(matches!(
         archive.to_bytes_recompressed(6),
-        Err(OmexError::Refused(_))
+        Err(OmexError::Password(_))
     ));
+    assert!(
+        archive
+            .to_bytes()
+            .unwrap_err()
+            .to_string()
+            .starts_with("refused: ")
+    );
 }
 
 /// The writer stores and deflates a member, and the reader reads both back.

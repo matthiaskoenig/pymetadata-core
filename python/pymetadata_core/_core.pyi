@@ -1,5 +1,7 @@
 """Type stubs of the extension module `pymetadata_core._core`."""
 
+import os
+from collections.abc import Sequence
 from typing import final
 
 __version__: str
@@ -9,8 +11,41 @@ class OmexError(ValueError):
     """An archive, entry or location the core cannot handle.
 
     A subclass of `ValueError`, so code which catches `ValueError` keeps working.
-    The message starts with the kind of the failure: `malformed`, `refused`,
-    `unsupported` or `not found`.
+    The kind of the failure is the class of the exception: `MalformedError`,
+    `RefusedError`, `UnsupportedError`, `NotFoundError` or `PasswordError`, each a
+    subclass of this one. The message starts with the same kind in words, so
+    `malformed`, `refused`, `unsupported` or `not found`, and a host which read
+    that prefix keeps working: catch the class instead.
+    """
+
+class MalformedError(OmexError):
+    """Bytes which are no archive, zip container or manifest."""
+
+class RefusedError(OmexError):
+    """Input the core refuses on purpose, e.g. a location outside of the archive.
+
+    A wrong or missing password is the subclass `PasswordError`, although its
+    message carries the same `refused` prefix.
+    """
+
+class UnsupportedError(OmexError):
+    """Input which is valid and uses a feature the core does not support.
+
+    Raised e.g. for a member under a compression method other than stored or
+    deflate, such as bzip2, and for WinZip AES.
+    """
+
+class NotFoundError(OmexError):
+    """An entry which does not exist, so a missing entry is not a broken archive."""
+
+class PasswordError(RefusedError):
+    """A member whose password is wrong or missing.
+
+    A refusal, so a subclass of `RefusedError` and of `OmexError`. It exists
+    because a host has to tell a member it may not read from one which is not
+    there: the message carries the `refused` prefix of every other refusal, and
+    this class is what separates them. Being raised proves that the member is in
+    the container.
     """
 
 class ArchiveBusyError(RuntimeError):
@@ -19,6 +54,11 @@ class ArchiveBusyError(RuntimeError):
     Inflating an entry, setting an entry and writing the archive run without the
     GIL, and an archive is used by one call at a time. Use one `Archive` per
     thread, or wait for the call to return.
+
+    A `RuntimeError` and deliberately not an `OmexError`: it says nothing about
+    the archive, which is intact, but about how it is being used, so `except
+    OmexError` does not catch it and no code which handles a broken archive
+    swallows it by accident.
     """
 
 @final
@@ -132,6 +172,36 @@ class Archive:
             ArchiveBusyError: if another thread is using this archive.
         """
 
+    def head(self, location: str, limit: int) -> bytes:
+        """The first `limit` bytes of an entry, inflating no more than those.
+
+        `entry_bytes` inflates the whole member, which is what a host pays to look at
+        the start of one: the format of a member the manifest does not list is told by
+        its first bytes. This reads that much and stops. The inflate budget does not
+        apply, since the read is bounded by `limit`, so a member too large to inflate
+        whole still has a head, and a member shorter than `limit` gives what it holds.
+
+        Nothing is cached: a head is a prefix and no entry is made of it, so a later
+        `entry_bytes` inflates the member as it would have. An entry whose bytes are at
+        hand, from an earlier read or from `set_entry`, is served from those bytes.
+
+        Args:
+            location: the location of an entry which has bytes, normalized.
+            limit: how many bytes to read at most.
+
+        Returns:
+            The first `limit` bytes of the entry, or fewer if it is shorter.
+
+        Raises:
+            OmexError: if the entry has no bytes, for `./manifest.xml`, which is written
+                from the entries, for a location outside of the archive, for a negative
+                `limit` and for a member this core cannot read, which is one under an
+                unsupported compression method or without its password. A CRC32 or a
+                size which does not match is not reported, since both describe the whole
+                member, so a member whose end is damaged has a head and no error.
+            ArchiveBusyError: if another thread is using this archive.
+        """
+
     def set_entry(self, location: str, format: str, master: bool, data: bytes) -> None:
         """Add an entry with its bytes, or replace the entry of the same location.
 
@@ -144,6 +214,28 @@ class Archive:
         Raises:
             OmexError: for a location outside of the archive, for `.` and for
                 `./manifest.xml`; the archive is unchanged then.
+            ArchiveBusyError: if another thread is using this archive.
+        """
+
+    def set_entry_format(self, location: str, format: str, master: bool) -> None:
+        """Change the format and the master flag of an entry, leaving its bytes alone.
+
+        `set_entry` takes the bytes of the entry, so changing only its metadata through
+        it inflates the member and deflates it again, for a change the member does not
+        carry. This changes the manifest entry alone, so a member of the container stays
+        the compressed blob `to_bytes` copies, and the entry keeps its position in the
+        manifest.
+
+        Args:
+            location: the location of an entry the manifest lists, normalized.
+            format: the format URI, see `lookup_format` and `guess_format`.
+            master: whether a tool should open the entry first.
+
+        Raises:
+            OmexError: if the manifest has no entry at the location, since this changes
+                an entry and does not add one, for a location outside of the archive and
+                for `.` and `./manifest.xml`, whose entries the specification prescribes;
+                the archive is unchanged then.
             ArchiveBusyError: if another thread is using this archive.
         """
 
@@ -160,6 +252,26 @@ class Archive:
         Raises:
             OmexError: for a location outside of the archive, as `set_entry` and
                 `entry_bytes` raise it; the archive is unchanged then.
+            ArchiveBusyError: if another thread is using this archive.
+        """
+
+    def reorder_entries(self, order: Sequence[str]) -> None:
+        """Reorder the entries this names, among the positions they hold now.
+
+        `to_bytes` lists the members in the order of the manifest, which for an archive
+        that was opened is what its `manifest.xml` declared, and then the members it did
+        not list in the order of the container. A host which keeps an order of its own
+        says so here: the locations of `order` are laid out in that order, into the slots
+        those same entries hold today, lowest slot first, and an entry which is not named
+        keeps its position. Naming every entry therefore sets the whole order of the
+        written manifest and of the members behind it.
+
+        Args:
+            order: the locations to lay out, normalized.
+
+        Raises:
+            OmexError: for a location no entry holds, for one named twice and for one
+                outside of the archive; the archive is unchanged then.
             ArchiveBusyError: if another thread is using this archive.
         """
 
@@ -181,6 +293,34 @@ class Archive:
                 an encrypted archive which was opened without its password.
             ArchiveBusyError: if another thread is using this archive.
         """
+
+def has_manifest(path: str | os.PathLike[str]) -> bool:
+    """Whether the file is a COMBINE archive, i.e. a zip container with a manifest.
+
+    This reads the end of the file, which says where the central directory is, and
+    then that directory, which lists the names. No member is inflated and none is
+    decrypted, so the cost is the size of the central directory and not the size of
+    the archive, where `Archive.from_bytes` needs every byte of it in memory. That
+    makes it the call for the question "is this an archive at all", which is a gate a
+    host puts in front of opening one.
+
+    A file which is no zip container, and a container which declares no manifest,
+    answer `False`. An encrypted archive answers `True`, since its manifest is
+    declared whether or not a caller may read it, and so does a container holding a
+    member name `Archive.from_bytes` would refuse: recognizing an archive is not
+    opening one.
+
+    Args:
+        path: the file to look at.
+
+    Returns:
+        True if the container declares a `./manifest.xml`.
+
+    Raises:
+        OSError: if the file cannot be opened or read, as `zipfile.is_zipfile` raises
+            for a path which is not there. Being unable to read a file is not an
+            answer about its content.
+    """
 
 def normalize_location(location: str) -> str:
     """Normalize a location to a relative POSIX path with the `./` prefix.

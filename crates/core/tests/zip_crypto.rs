@@ -70,8 +70,12 @@ fn refuses_a_wrong_password() {
             // another reason, because an empty password is no password at all, which
             // `refuses_an_empty_password_like_no_password` is about. Either way the message
             // must not blame the archive
-            assert!(matches!(error, OmexError::Refused(_)), "{name}: {error}");
+            assert!(matches!(error, OmexError::Password(_)), "{name}: {error}");
             assert!(error.to_string().contains("password"), "{error}");
+            assert!(
+                error.to_string().starts_with("refused: "),
+                "the message keeps the prefix of a refusal: {error}"
+            );
         }
     }
 }
@@ -82,7 +86,7 @@ fn refuses_an_encrypted_member_without_a_password() {
     for name in ENCRYPTED {
         let bytes = fixture(name);
         let error = read(&bytes, None).unwrap_err();
-        assert!(matches!(error, OmexError::Refused(_)), "{name}: {error}");
+        assert!(matches!(error, OmexError::Password(_)), "{name}: {error}");
         assert!(error.to_string().contains("password"), "{error}");
     }
 }
@@ -94,7 +98,7 @@ fn refuses_an_empty_password_like_no_password() {
         let bytes = fixture(name);
         let none = read(&bytes, None).unwrap_err();
         let empty = read(&bytes, Some(b"")).unwrap_err();
-        assert!(matches!(empty, OmexError::Refused(_)), "{name}: {empty}");
+        assert!(matches!(empty, OmexError::Password(_)), "{name}: {empty}");
         assert_eq!(none.to_string(), empty.to_string());
     }
 }

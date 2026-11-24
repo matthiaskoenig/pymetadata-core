@@ -140,14 +140,65 @@ impl Reader {
     ///
     /// # Errors
     ///
-    /// [`OmexError::Refused`] if the member inflates to more than this reader allows, or is
-    /// encrypted and the reader has no password or the wrong one,
+    /// [`OmexError::Refused`] if the member inflates to more than this reader allows,
+    /// [`OmexError::Password`] if it is encrypted and the reader has no password or the wrong
+    /// one,
     /// [`OmexError::Unsupported`] if the member uses a compression method other than stored or
     /// deflate (WinZip AES is method 99) or strong encryption, [`OmexError::Malformed`] if the
     /// member cannot be read, does not inflate, or does not match the size and the CRC32 of
     /// the central directory.
     pub fn inflate(&self, member: &Member) -> Result<Vec<u8>, OmexError> {
         let raw = self.raw(member)?;
+        self.check_readable(member)?;
+        let stream = self.plaintext(member, raw)?;
+        let data = match member.method {
+            // a stored member is its own uncompressed bytes, which the budget covers too; a
+            // declared size which is another one is caught by `verify`
+            STORED if stream.len() > self.max_inflated_size => {
+                return Err(refuse(member, stream.len() as u64, self.max_inflated_size));
+            }
+            STORED => stream.into_owned(),
+            _ => decompress(&stream, member, self.max_inflated_size)?,
+        };
+        verify(member, &data)?;
+        Ok(data)
+    }
+
+    /// The first `limit` uncompressed bytes of `member`, inflating no more than those.
+    ///
+    /// This is [`Reader::inflate`] stopped early: it exists so that a host which classifies a
+    /// member by its first bytes does not pay for the whole member. The budget of the reader
+    /// does not apply, since what is read is bounded by `limit` and not by what the member
+    /// declares, so a member above the budget has a head like any other.
+    ///
+    /// What is returned is a prefix, so the CRC32 and the size of the central directory are
+    /// not checked: they describe the whole member and cannot be checked against a part of
+    /// it. A member shorter than `limit` gives what it holds, which is also how a caller sees
+    /// that it read all of it.
+    ///
+    /// # Errors
+    ///
+    /// Those of [`Reader::inflate`], except the refusal over the budget: an unsupported
+    /// compression method, strong encryption, a missing or wrong password, and a stream which
+    /// is corrupt or ends before `limit` bytes are inflated.
+    pub fn inflate_head(&self, member: &Member, limit: usize) -> Result<Vec<u8>, OmexError> {
+        let raw = self.raw(member)?;
+        self.check_readable(member)?;
+        let stream = self.plaintext(member, raw)?;
+        let head = match member.method {
+            STORED => stream[..stream.len().min(limit)].to_vec(),
+            _ => decompress_head(&stream, member, limit)?,
+        };
+        Ok(head)
+    }
+
+    /// Whether the member is one this core can read at all, apart from its content.
+    ///
+    /// # Errors
+    ///
+    /// [`OmexError::Unsupported`] for a compression method other than stored or deflate, and
+    /// for strong encryption.
+    fn check_readable(&self, member: &Member) -> Result<(), OmexError> {
         if !matches!(member.method, STORED | DEFLATE) {
             let method = member.method;
             let known = method_name(method).map_or(String::new(), |name| format!(" ({name})"));
@@ -162,28 +213,26 @@ impl Reader {
                 member.name
             )));
         }
-        let stream = if member.flags & ENCRYPTED == 0 {
-            Cow::Borrowed(raw)
-        } else {
-            let password = self.password.as_deref().ok_or_else(|| {
-                OmexError::Refused(format!(
-                    "member {:?} is encrypted and the reader was given no password",
-                    member.name
-                ))
-            })?;
-            Cow::Owned(crypto::decrypt(member, raw, password)?)
-        };
-        let data = match member.method {
-            // a stored member is its own uncompressed bytes, which the budget covers too; a
-            // declared size which is another one is caught by `verify`
-            STORED if stream.len() > self.max_inflated_size => {
-                return Err(refuse(member, stream.len() as u64, self.max_inflated_size));
-            }
-            STORED => stream.into_owned(),
-            _ => decompress(&stream, member, self.max_inflated_size)?,
-        };
-        verify(member, &data)?;
-        Ok(data)
+        Ok(())
+    }
+
+    /// The bytes of the member with its encryption taken off, borrowed when there is none.
+    ///
+    /// # Errors
+    ///
+    /// [`OmexError::Password`] if the member is encrypted and the reader has no password or
+    /// the wrong one.
+    fn plaintext<'a>(&self, member: &Member, raw: &'a [u8]) -> Result<Cow<'a, [u8]>, OmexError> {
+        if member.flags & ENCRYPTED == 0 {
+            return Ok(Cow::Borrowed(raw));
+        }
+        let password = self.password.as_deref().ok_or_else(|| {
+            OmexError::Password(format!(
+                "member {:?} is encrypted and the reader was given no password",
+                member.name
+            ))
+        })?;
+        Ok(Cow::Owned(crypto::decrypt(member, raw, password)?))
     }
 }
 
@@ -197,6 +246,66 @@ impl std::fmt::Debug for Reader {
             .field("max_inflated_size", &self.max_inflated_size)
             .finish()
     }
+}
+
+/// Inflate the first `limit` bytes of the deflate stream of `member`, and stop there.
+///
+/// Unlike [`decompress`] this never looks at the size the member declares: a head is bounded
+/// by what the caller asked for, so the budget of the reader and the check against the
+/// expansion factor of deflate have nothing to bound here. The buffer is reserved in steps
+/// which never exceed `limit`, so asking for 256 bytes allocates 256 bytes.
+///
+/// # Errors
+///
+/// [`OmexError::Malformed`] if the stream is corrupt or ends before `limit` bytes are
+/// inflated and before it reports its end.
+fn decompress_head(raw: &[u8], member: &Member, limit: usize) -> Result<Vec<u8>, OmexError> {
+    if limit == 0 || raw.is_empty() {
+        return Ok(Vec::new());
+    }
+    let mut data: Vec<u8> = Vec::new();
+    let mut state = Decompress::new(false);
+    while data.len() < limit {
+        if data.len() == data.capacity() {
+            let grow = data
+                .capacity()
+                .max(INFLATE_CHUNK)
+                .min(limit.saturating_sub(data.len()));
+            if grow == 0 {
+                break;
+            }
+            data.reserve_exact(grow);
+        }
+        let read = state.total_in();
+        let written = state.total_out();
+        let consumed = as_usize(read, "the length of a deflate stream")?;
+        let rest = raw.get(consumed..).ok_or_else(|| {
+            OmexError::Malformed(format!(
+                "member {:?} inflated past the {} bytes it holds",
+                member.name,
+                raw.len()
+            ))
+        })?;
+        let status = state
+            .decompress_vec(rest, &mut data, FlushDecompress::None)
+            .map_err(|error| {
+                OmexError::Malformed(format!(
+                    "member {:?} does not inflate: {error}",
+                    member.name
+                ))
+            })?;
+        if status == Status::StreamEnd {
+            break;
+        }
+        if state.total_in() == read && state.total_out() == written {
+            return Err(OmexError::Malformed(format!(
+                "the deflate stream of member {:?} ends before the member does",
+                member.name
+            )));
+        }
+    }
+    data.truncate(limit);
+    Ok(data)
 }
 
 /// Inflate the deflate stream of `member`, into at most `limit` bytes.

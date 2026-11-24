@@ -54,6 +54,9 @@ pub struct ErrorResponse {
 /// - `malformed`, `refused` and `unsupported` name the variant of the same name.
 /// - `not_found` names [`OmexError::NotFound`], so a host can tell a missing entry from a broken
 ///   archive.
+/// - `password` names [`OmexError::Password`], so a host can tell a member whose password is
+///   wrong or missing from every other refusal. Its message carries the `refused` prefix, so
+///   this kind is the only way to tell the two apart without reading the text.
 ///
 /// A fifth kind, `internal`, is not returned here: no [`OmexError`] is an internal failure, and
 /// a host which fails for a reason outside of the core (no archive open, a panic) reports that
@@ -64,6 +67,7 @@ pub fn kind(error: &OmexError) -> &'static str {
         OmexError::Refused(_) => "refused",
         OmexError::Unsupported(_) => "unsupported",
         OmexError::NotFound(_) => "not_found",
+        OmexError::Password(_) => "password",
     }
 }
 
@@ -147,6 +151,7 @@ mod tests {
             (OmexError::Refused("r".into()), "refused"),
             (OmexError::Unsupported("u".into()), "unsupported"),
             (OmexError::NotFound("n".into()), "not_found"),
+            (OmexError::Password("p".into()), "password"),
         ];
         for (error, expected) in &cases {
             assert_eq!(kind(error), *expected);

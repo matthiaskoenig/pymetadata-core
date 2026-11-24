@@ -34,6 +34,7 @@ A failed call throws an `OmexError` with a `kind` and a `message`:
 | `refused` | a limit or a rule of the format, for instance a location outside of the archive |
 | `unsupported` | the archive uses something 0.1.0 does not read, for instance a compression method |
 | `not_found` | the location is not in the archive |
+| `password` | the member is encrypted and the password is wrong or missing; its message carries the `refused` prefix, so this kind is what tells the two apart |
 | `internal` | the request cannot be carried out, for instance a read before `open`; also any exception which is no trap of the module (a stack overflow, a memory which could not grow, a failure of the loader), and that one spends the instance |
 | `panic` | a bug of the build, with the message of the panic |
 | `trap` | the module trapped without a message, for instance an allocation it could not serve |

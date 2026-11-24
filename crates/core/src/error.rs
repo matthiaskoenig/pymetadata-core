@@ -18,4 +18,13 @@ pub enum OmexError {
     /// A requested entry does not exist.
     #[error("not found: {0}")]
     NotFound(String),
+    /// A member whose password is wrong or missing, which is a refusal of its own kind.
+    ///
+    /// The message carries the `refused` prefix, since this is a refusal and the prefix is
+    /// what hosts have been reading: what changes is that the kind is readable without the
+    /// message, see [`crate::wire::kind`]. A host which has to tell a member it may not read
+    /// from one which is not there, as `pymetadata` does to raise its own `PasswordError`,
+    /// matches on this variant instead of on the text.
+    #[error("refused: {0}")]
+    Password(String),
 }

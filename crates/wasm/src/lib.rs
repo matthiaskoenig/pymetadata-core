@@ -18,15 +18,17 @@
 //!
 //! Every export but the three of the buffers returns 0 for an answer and 1 for a failure, and
 //! publishes exactly one output either way: the answer, or the JSON of
-//! [`pymetadata_core::wire::ErrorResponse`], which names the kind of the failure. The six kinds
-//! are the four of [`pymetadata_core::wire::kind`] - `malformed`, `refused`, `unsupported` and
-//! `not_found` - and the two of this host, [`calls::INTERNAL`] and [`calls::PANIC`]. The code is
+//! [`pymetadata_core::wire::ErrorResponse`], which names the kind of the failure. The seven
+//! kinds are the five of [`pymetadata_core::wire::kind`] - `malformed`, `refused`,
+//! `unsupported`, `not_found` and `password` - and the two of this host,
+//! [`calls::INTERNAL`] and [`calls::PANIC`]. The code is
 //! the bit a page branches on and the kind is what it routes on, which is the layout the sibling
 //! hosts of `pkpdutils-core` and `sbmlsim-core` speak. The python binding reports the same four
-//! failures of the core, but as the `Display` prefix of its `OmexError` and not as a field of
-//! its own, and those strings are not these: the prefix of a
+//! failures of the core, but as the class of its exception and as the `Display` prefix of it,
+//! not as a field of its own, and neither of those strings is one of these: the prefix of a
 //! [`pymetadata_core::OmexError::NotFound`] reads `not found`, where the kind on the wire is
-//! `not_found`.
+//! `not_found`, and a [`pymetadata_core::OmexError::Password`] carries the `refused` prefix
+//! while its kind here is `password`.
 //!
 //! The exports:
 //!

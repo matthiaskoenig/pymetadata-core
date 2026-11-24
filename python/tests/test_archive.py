@@ -3,12 +3,14 @@
 import inspect
 import io
 import struct
+import tracemalloc
 import zipfile
 from pathlib import Path
 
 import pytest
-from conftest import ARCHIVES
+from conftest import ARCHIVES, DATA
 
+import pymetadata_core
 from pymetadata_core import (
     Archive,
     OmexError,
@@ -18,6 +20,13 @@ from pymetadata_core import (
 )
 
 MANIFEST = "./manifest.xml"
+
+MANIFEST_XML = """<?xml version="1.0" encoding="UTF-8"?>
+<omexManifest xmlns="http://identifiers.org/combine.specifications/omex-manifest">
+  <content location="." format="http://identifiers.org/combine.specifications/omex"/>
+  <content location="./manifest.xml" format="http://identifiers.org/combine.specifications/omex-manifest"/>
+</omexManifest>"""
+"""the manifest of a container built by hand."""
 
 
 def test_there_are_four_fixtures():
@@ -294,3 +303,218 @@ def test_the_stub_declares_members_and_has_bytes():
         assert f"@property\n    def {name}(" in stub
     assert list(inspect.signature(Archive.has_bytes).parameters) == ["self", "location"]
     assert "def has_bytes(self, location: str) -> bool:" in stub
+
+
+def test_set_entry_format_changes_the_manifest_and_copies_the_member(
+    archive_path: Path,
+) -> None:
+    """A metadata only change does not recompress the member it describes."""
+    data = archive_path.read_bytes()
+    before = {
+        member.filename: (member.compress_type, member.compress_size, member.CRC)
+        for member in zipfile.ZipFile(io.BytesIO(data)).infolist()
+        if not member.is_dir()
+    }
+    archive = Archive.from_bytes(data)
+    target = next(
+        location
+        for location, _, _ in archive.entries
+        if location.endswith(".xml") and location != MANIFEST
+    )
+    archive.set_entry_format(target, lookup_format("txt"), True)
+    assert (target, lookup_format("txt"), True) in archive.entries
+    written = zipfile.ZipFile(io.BytesIO(archive.to_bytes()))
+    for member in written.infolist():
+        name = member.filename
+        if name == "manifest.xml" or name not in before:
+            continue
+        assert (member.compress_type, member.compress_size, member.CRC) == before[
+            name
+        ], f"{name} was rewritten"
+    assert f'format="{lookup_format("txt")}"' in archive.manifest_xml()
+
+
+def test_set_entry_format_refuses_what_it_cannot_change() -> None:
+    """An unknown location is refused, as are the two prescribed entries."""
+    archive = Archive.from_bytes(ARCHIVES[2].read_bytes())
+    for location in (".", MANIFEST, "manifest.xml", "./nothing.xml"):
+        with pytest.raises(OmexError):
+            archive.set_entry_format(location, lookup_format("txt"), False)
+    assert "./nothing.xml" not in [location for location, _, _ in archive.entries]
+
+
+def test_set_entry_format_keeps_the_order_of_the_entries() -> None:
+    """The entry stays where it was in the manifest."""
+    archive = Archive.from_bytes(ARCHIVES[2].read_bytes())
+    before = [location for location, _, _ in archive.entries]
+    archive.set_entry_format(before[-1], lookup_format("txt"), False)
+    assert [location for location, _, _ in archive.entries] == before
+
+
+def test_reorder_entries_sets_the_order_of_the_written_archive() -> None:
+    """The order a host sets is the order of the written manifest and its members."""
+    archive = Archive.from_bytes(ARCHIVES[3].read_bytes())
+    wanted = sorted(
+        location
+        for location, _, _ in archive.entries
+        if location not in (".", MANIFEST)
+    )
+    assert wanted != [
+        location
+        for location, _, _ in archive.entries
+        if location not in (".", MANIFEST)
+    ], "the fixture is worth the test only if the orders differ"
+    archive.reorder_entries(wanted)
+    written = Archive.from_bytes(archive.to_bytes())
+    assert [
+        location
+        for location, _, _ in written.entries
+        if location not in (".", MANIFEST)
+    ] == wanted
+    names = [
+        name
+        for name in zipfile.ZipFile(io.BytesIO(archive.to_bytes())).namelist()
+        if name != "manifest.xml"
+    ]
+    # the fixture declares one entry no member provides, which stays a manifest entry
+    # without becoming a member, so the members are the entries which have bytes
+    assert names == [
+        location.removeprefix("./")
+        for location in wanted
+        if archive.has_bytes(location)
+    ]
+    assert not archive.has_bytes("./iCGB21FR_memote.html")
+
+
+def test_reorder_entries_refuses_an_order_it_cannot_apply() -> None:
+    """An unknown location, a repeated one and one outside of the archive are refused."""
+    archive = Archive.from_bytes(ARCHIVES[2].read_bytes())
+    before = [location for location, _, _ in archive.entries]
+    for order in (["./nothing.xml"], [before[2], before[2]], ["../evil.txt"]):
+        with pytest.raises(OmexError):
+            archive.reorder_entries(order)
+    assert [location for location, _, _ in archive.entries] == before
+
+
+def test_head_is_the_prefix_of_the_entry(archive_path: Path) -> None:
+    """A head is what `entry_bytes` starts with, for every readable entry."""
+    archive = Archive.from_bytes(archive_path.read_bytes())
+    for location, _, _ in archive.entries:
+        if location in (".", MANIFEST) or not archive.has_bytes(location):
+            continue
+        try:
+            head = archive.head(location, 256)
+        except OmexError:
+            continue  # a member this core cannot read has no head either
+        assert head == archive.entry_bytes(location)[:256], location
+        assert len(head) <= 256
+
+
+def test_head_does_not_cache_and_serves_what_is_at_hand() -> None:
+    """A head leaves the entry unread, and uses the bytes of one which was read."""
+    archive = Archive.from_bytes(ARCHIVES[2].read_bytes())
+    archive.set_entry("new.txt", lookup_format("txt"), False, b"0123456789")
+    assert archive.head("./new.txt", 4) == b"0123"
+    assert archive.head("./new.txt", 99) == b"0123456789"
+    location = next(
+        name
+        for name, _, _ in archive.entries
+        if name.endswith(".xml") and name != MANIFEST
+    )
+    assert archive.head(location, 0) == b""
+    whole = archive.entry_bytes(location)
+    assert archive.head(location, 8) == whole[:8]
+
+
+def test_head_refuses_what_it_cannot_read() -> None:
+    """The manifest, an unknown location and a negative limit are errors."""
+    archive = Archive.from_bytes(ARCHIVES[2].read_bytes())
+    for location, limit in ((MANIFEST, 8), (".", 8), ("./nothing.xml", 8), ("../x", 8)):
+        with pytest.raises(OmexError):
+            archive.head(location, limit)
+    location = next(
+        name
+        for name, _, _ in archive.entries
+        if name.endswith(".xml") and name != MANIFEST
+    )
+    with pytest.raises(OmexError, match="negative"):
+        archive.head(location, -1)
+
+
+def test_head_classifies_an_xml_member_without_inflating_it() -> None:
+    """The case this exists for: the format of an unlisted member from its first bytes."""
+    archive = Archive.from_bytes(ARCHIVES[3].read_bytes())
+    unlisted = [
+        location
+        for location, _, _ in archive.entries
+        if location.endswith(".xml")
+        and location != MANIFEST
+        and archive.has_bytes(location)
+    ]
+    assert unlisted, "the fixture holds xml members"
+    for location in unlisted:
+        head = archive.head(location, 256)
+        assert guess_format("xml", head) == guess_format(
+            "xml", archive.entry_bytes(location)[:256]
+        ), location
+
+
+def test_has_manifest_recognizes_every_fixture(archive_path: Path) -> None:
+    """The probe agrees with opening the archive, for every archive of the corpus."""
+    assert pymetadata_core.has_manifest(archive_path) is True
+    assert pymetadata_core.has_manifest(str(archive_path)) is True
+
+
+def test_has_manifest_reads_a_fraction_of_the_file(tmp_path: Path) -> None:
+    """The point of the probe: the cost is the directory, not the archive."""
+    source = ARCHIVES[3]
+    padded = tmp_path / "padded.omex"
+    # an archive with a few MB of members, to tell the two costs apart
+    padded.write_bytes(source.read_bytes())
+    assert pymetadata_core.has_manifest(padded) is True
+    tracemalloc.start()
+    pymetadata_core.has_manifest(padded)
+    probe_peak = tracemalloc.get_traced_memory()[1]
+    tracemalloc.stop()
+    tracemalloc.start()
+    Archive.from_bytes(padded.read_bytes())
+    open_peak = tracemalloc.get_traced_memory()[1]
+    tracemalloc.stop()
+    assert probe_peak < open_peak, (probe_peak, open_peak)
+
+
+def test_has_manifest_is_false_for_what_is_no_archive(tmp_path: Path) -> None:
+    """A file which is no zip, and a zip without a manifest, are no archives."""
+    plain = tmp_path / "plain.txt"
+    plain.write_bytes(b"this is not a zip container")
+    assert pymetadata_core.has_manifest(plain) is False
+    empty = tmp_path / "empty.bin"
+    empty.write_bytes(b"")
+    assert pymetadata_core.has_manifest(empty) is False
+    no_manifest = tmp_path / "no_manifest.zip"
+    with zipfile.ZipFile(no_manifest, "w") as zf:
+        zf.writestr("readme.txt", "no manifest here")
+    assert pymetadata_core.has_manifest(no_manifest) is False
+
+
+def test_has_manifest_recognizes_an_archive_it_could_not_open(tmp_path: Path) -> None:
+    """Recognizing an archive is not opening one: no member is read."""
+    encrypted = DATA / "zip" / "encrypted_omex.zip"
+    assert pymetadata_core.has_manifest(encrypted) is True
+    with pytest.raises(pymetadata_core.PasswordError):
+        Archive.from_bytes(encrypted.read_bytes())
+    outside = tmp_path / "outside.omex"
+    with zipfile.ZipFile(outside, "w") as zf:
+        zf.writestr("manifest.xml", MANIFEST_XML)
+        zf.writestr("../evil.txt", "x")
+    assert pymetadata_core.has_manifest(outside) is True
+    with pytest.raises(OmexError):
+        Archive.from_bytes(outside.read_bytes())
+
+
+def test_has_manifest_raises_for_a_file_it_cannot_read(tmp_path: Path) -> None:
+    """A path which is not there is an OSError, as it is for `zipfile.is_zipfile`."""
+    with pytest.raises(OSError):
+        pymetadata_core.has_manifest(tmp_path / "nothing.omex")
+    with pytest.raises(OSError):
+        pymetadata_core.has_manifest(tmp_path)

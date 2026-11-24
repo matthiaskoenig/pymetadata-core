@@ -17,6 +17,7 @@ mod central;
 mod crypto;
 mod eocd;
 mod local;
+pub mod probe;
 mod reader;
 mod spec;
 mod writer;

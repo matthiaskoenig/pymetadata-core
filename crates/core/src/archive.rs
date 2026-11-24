@@ -248,6 +248,52 @@ impl Archive {
         }
     }
 
+    /// The first `limit` bytes of an entry, inflating no more than those.
+    ///
+    /// [`Archive::entry_bytes`] inflates the whole member, which is what a host pays to look
+    /// at the start of one: the format of a member a manifest does not list is told by its
+    /// first bytes, and 256 of them answer it. This reads that much and stops.
+    ///
+    /// The budget of the reader does not apply, since the read is bounded by `limit`: a
+    /// member which is too large to inflate still has a head. A member shorter than `limit`
+    /// gives what it holds, so a caller which gets fewer bytes has all of them.
+    ///
+    /// Nothing is cached: a head is a prefix and no entry is made of it, so a later
+    /// [`Archive::entry_bytes`] inflates the member as it would have, and two heads of the
+    /// same member inflate twice, each bounded by its `limit`. An entry whose bytes are at
+    /// hand, because they were read or handed over, is served from those bytes and inflates
+    /// nothing.
+    ///
+    /// # Errors
+    ///
+    /// [`OmexError::NotFound`] if the entry has no bytes, as for [`Archive::entry_bytes`],
+    /// [`OmexError::Refused`] for a location which cannot be normalized and for
+    /// `./manifest.xml`, which is written from the entries, and the errors of
+    /// [`crate::zip::Reader::inflate_head`]: an unsupported compression method, strong
+    /// encryption, a missing or wrong password, and a stream which is corrupt. What a head
+    /// does not report is a CRC32 or a size which does not match, since both describe the
+    /// whole member, so a member whose end is damaged has a head and no error.
+    pub fn head(&mut self, location: &str, limit: usize) -> Result<Vec<u8>, OmexError> {
+        let key = normalize_location(location)?;
+        if key == MANIFEST_LOCATION {
+            return Err(OmexError::Refused(format!(
+                "the bytes of '{key}' are written from the entries, see manifest() and Manifest::to_xml"
+            )));
+        }
+        match self.content.get(&key) {
+            Some(Content::Inflated { data, .. } | Content::Replaced(data)) => {
+                Ok(data[..data.len().min(limit)].to_vec())
+            }
+            Some(&Content::Member(index)) => {
+                let (reader, member) = self.member(index)?;
+                reader.inflate_head(member, limit)
+            }
+            None => Err(OmexError::NotFound(format!(
+                "no entry with bytes at '{key}'"
+            ))),
+        }
+    }
+
     /// The entries the `manifest.xml` of the source container declared, exactly as it did.
     ///
     /// One per `content` element in document order. Unlike [`Archive::manifest`] there is no
@@ -333,6 +379,41 @@ impl Archive {
         Ok(())
     }
 
+    /// Change the format and the master flag of an entry, leaving its bytes alone.
+    ///
+    /// [`Archive::set_entry`] takes the bytes of the entry, so changing only its metadata
+    /// through it means handing the member back, which inflates it and deflates it again for
+    /// a change the member does not carry: the format URI and the master flag live in the
+    /// `manifest.xml` and nowhere else. This call changes the manifest entry alone, so a
+    /// member of the input stays the compressed blob [`Archive::to_bytes`] copies.
+    ///
+    /// The entry keeps its position in the manifest. The location is normalized, as it is for
+    /// every other call which takes one.
+    ///
+    /// # Errors
+    ///
+    /// [`OmexError::Refused`] for a location which cannot be normalized, for `.` and
+    /// `./manifest.xml`, whose entries the specification fixes, and for a format holding text
+    /// XML cannot carry; [`OmexError::NotFound`] if the manifest has no entry at the location,
+    /// since this changes an entry and does not add one. The archive is unchanged then.
+    pub fn set_entry_format(
+        &mut self,
+        location: &str,
+        format: &str,
+        master: bool,
+    ) -> Result<(), OmexError> {
+        let key = normalize_location(location)?;
+        if key == ARCHIVE_LOCATION || key == MANIFEST_LOCATION {
+            return Err(OmexError::Refused(format!(
+                "the entry of '{key}' is the one the specification prescribes"
+            )));
+        }
+        if self.manifest.get(&key).is_none() {
+            return Err(OmexError::NotFound(format!("no entry at '{key}'")));
+        }
+        self.manifest.add(Entry::new(&key, format, master)?)
+    }
+
     /// Remove an entry and its bytes, and return the entry.
     ///
     /// The location is normalized, as it is for every other call which takes one. `.`,
@@ -352,6 +433,29 @@ impl Archive {
         };
         self.content.remove(&entry.location);
         Ok(Some(entry))
+    }
+
+    /// Reorder the entries this names, among the positions they hold now.
+    ///
+    /// The write lists the members in the order of the manifest, and the manifest of an
+    /// archive which was opened holds the entries its `manifest.xml` declared, then the
+    /// members it did not list, in the order of the central directory. A host which keeps its
+    /// own order therefore loses it on a write, since nothing it does tells this core what
+    /// that order is. This is how it says so.
+    ///
+    /// The entries of `order` are laid out in the order given, into the slots those same
+    /// entries hold today, lowest slot first. An entry `order` does not name stays where it
+    /// is, so naming every entry sets the whole order of the written `manifest.xml` and of
+    /// the members behind it, while naming a few sorts those few and moves nothing else. See
+    /// [`Manifest::reorder`], which this is.
+    ///
+    /// # Errors
+    ///
+    /// [`OmexError::Refused`] for a location which cannot be normalized and for one `order`
+    /// names twice, [`OmexError::NotFound`] for a location no entry holds; the archive is
+    /// unchanged then.
+    pub fn reorder_entries(&mut self, order: &[impl AsRef<str>]) -> Result<(), OmexError> {
+        self.manifest.reorder(order)
     }
 
     /// Write the archive, copying every entry which did not change as the blob it is.
