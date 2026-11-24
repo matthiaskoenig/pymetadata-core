@@ -30,6 +30,14 @@ the follow-up in `docs/design/omex-core.md`).
 - `modify_write`: `from_bytes`, `set_entry` with 64 kB for the first entry which has bytes, and
   `to_bytes`. Every entry which did not change is copied as the compressed blob it is; only the
   64 kB are deflated.
+- `classify_heads`: `from_bytes` and `Archive::head` for the first 256 bytes of every entry
+  which has bytes. It is `read_all` with the head in place of the whole member, so the two are
+  the same walk over the same entries, inflating 256 bytes of each or all of each. Added in
+  0.3.0.
+- `probe`: `zip::probe::declares_manifest_in` over the same bytes, which parses the records at
+  the end of the container and walks its central directory for the name of the manifest. It
+  inflates nothing and opens no archive, and it returns as soon as it finds the name, which in
+  every fixture of the corpus is within the first members. Added in 0.3.0.
 - `write_copy`: `from_bytes` and `to_bytes`, nothing changed. The raw copy alone.
 - `write_recompress`, `write_recompress_l6`: `from_bytes` and `to_bytes_recompressed` at level 9
   and at level 6. Every member is inflated and deflated again.
@@ -194,6 +202,53 @@ The headline cells on `iCGB21FR.omex` (1.4 MB), over the runs:
 | python to_omex | 5 | 230.333 | 234.400 |
 | python load_modify_save | 5 | 251.372 | 253.950 |
 | python zip_write_recompress_l6 | 5 | 122.988 | 130.926 |
+
+## The calls of 0.3.0
+
+`classify_heads` and `probe` were added with the calls they time, so their numbers come from a
+session of their own: five runs of the Rust harness on the machine below, written to
+`bench/runs/rust-0.3.0-{1..5}.csv`, with the same protocol as the rest (3 warm-up calls, rounds
+of 20 timed calls, the median of 3 rounds per run, the minimum of the 5 runs published). Both
+columns of a row come from those same runs, so they are comparable with each other; they are
+not comparable with the python columns above, which were measured in the earlier session.
+
+The question each row answers is what the new call replaces: a host which classified a member
+by its content had to inflate the member (`read_all`), and one which asked whether a file is an
+archive had to open it (`manifest_only`).
+
+| archive | size | read_all ms | classify_heads ms | factor |
+|---|---|---|---|---|
+| CompModels.omex | 7 kB | 0.0338 | 0.0162 | 2.1x |
+| BIOMD0000000001.omex | 285 kB | 1.1962 | 0.0686 | 17x |
+| CombineArchiveShowCase.omex | 1.1 MB | 3.3748 | 0.1523 | 22x |
+| iCGB21FR.omex | 1.4 MB | 10.1016 | 0.1350 | 75x |
+
+| archive | size | manifest_only ms | probe ms | factor |
+|---|---|---|---|---|
+| CompModels.omex | 7 kB | 0.0079 | 0.0007 | 11x |
+| BIOMD0000000001.omex | 285 kB | 0.0229 | 0.0001 | 229x |
+| CombineArchiveShowCase.omex | 1.1 MB | 0.0668 | 0.0012 | 56x |
+| iCGB21FR.omex | 1.4 MB | 0.0801 | 0.0002 | 400x |
+
+What these numbers are worth, and what they are not:
+
+- The factor of `classify_heads` grows with the archive, which is the shape of the change: the
+  head is bounded by 256 bytes per member while the inflate is not, so the bigger the members,
+  the more of them is not read. The 2.1x of the 7 kB fixture is the floor, where the members
+  are smaller than a few heads and the cost is the walk itself.
+- The spread between the runs is wide for both cells, wider than for the older ones: the
+  slowest of the five runs of `classify_heads` is 0.3460 ms for `iCGB21FR.omex` against the
+  0.1350 ms published, and of `probe` 0.0004 ms against 0.0002 ms. The minimum is the
+  favourable estimator the protocol prescribes; the slowest run still leaves the factor at 29x
+  for `classify_heads` and 200x for `probe` on that archive.
+- The `probe` numbers are tenths of a microsecond, which is the resolution the harness works
+  at: read them as "this is not work", not as a measurement with three digits. It walks the
+  central directory until it finds the manifest, which is the first member in each fixture of
+  the corpus, so a container which declares it last would cost the whole directory.
+- Neither cell does file I/O, so neither says what the python `has_manifest(path)` costs: that
+  reads the tail of the file and the central directory from disk. Measured separately on
+  `iCGB21FR.omex`, it is 0.005 ms against 0.434 ms for `Archive.from_bytes` over the same file,
+  with the file never entering python memory.
 
 ## Against the spike
 

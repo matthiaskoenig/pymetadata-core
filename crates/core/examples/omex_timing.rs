@@ -35,6 +35,10 @@ const CALLS: usize = 20;
 const LEVEL: u32 = 9;
 /// The default level of zlib and of python's `zipfile`, which is what the spike measured.
 const LEVEL_DEFAULT: u32 = 6;
+/// How many bytes of a member `classify_heads` reads, which is what the format of an XML
+/// member is told from.
+const HEAD: usize = 256;
+
 /// The size of the content `modify_write` puts in place of one entry.
 const PAYLOAD: usize = 64 * 1024;
 const MANIFEST: &str = "./manifest.xml";
@@ -121,6 +125,35 @@ fn manifest_owned(bytes: Vec<u8>) -> Result<u64, OmexError> {
     let xml = std::str::from_utf8(&xml)
         .map_err(|error| OmexError::Malformed(format!("manifest.xml is not UTF-8: {error}")))?;
     Ok(Manifest::parse(xml)?.entries().len() as u64)
+}
+
+/// `classify_heads`: open the archive and read the first [`HEAD`] bytes of every entry which
+/// has bytes, which is what a host does to tell the format of a member from its content. It is
+/// `read_all` with [`Archive::head`] in place of `Archive::entry_bytes`, so the two cells are
+/// the cost of the same walk with and without inflating every member whole.
+fn classify_heads(bytes: &[u8]) -> Result<u64, OmexError> {
+    let mut archive = Archive::from_bytes(bytes)?;
+    let mut total = 0;
+    for location in content_locations(&archive) {
+        match archive.head(&location, HEAD) {
+            Ok(data) => total += data.len() as u64,
+            // the manifest lists it and the zip does not hold it, as in iCGB21FR.omex
+            Err(OmexError::NotFound(_)) => {}
+            Err(error) => return Err(error),
+        }
+    }
+    Ok(total)
+}
+
+/// `probe`: answer whether the bytes are a COMBINE archive, from the central directory alone.
+///
+/// This is the question a host asks in front of opening an archive. It parses the records at
+/// the end and walks the central directory for the name of the manifest, and inflates nothing,
+/// so the comparison is against `manifest_only`, which is the cheapest cell that opens one.
+fn probe_container(bytes: &[u8]) -> Result<u64, OmexError> {
+    Ok(u64::from(
+        pymetadata_core::zip::probe::declares_manifest_in(bytes)?,
+    ))
 }
 
 /// `read_all`: open the archive and inflate every entry which has bytes. An entry which the
@@ -236,6 +269,8 @@ fn measure(path: &Path) -> Result<Vec<Row>, OmexError> {
         time_with(|| bytes.clone(), manifest_owned)?,
     );
     push("read_all", time(|| read_all(&bytes))?);
+    push("classify_heads", time(|| classify_heads(&bytes))?);
+    push("probe", time(|| probe_container(&bytes))?);
     push(
         "modify_write",
         time(|| modify_write(&bytes, &target, &payload))?,
