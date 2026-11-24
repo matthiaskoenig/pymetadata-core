@@ -1,6 +1,7 @@
 //! The lazy COMBINE archive, the type the hosts and the writer work with.
 
 use std::collections::HashMap;
+use std::io::Write;
 
 use crate::error::OmexError;
 use crate::formats::guess_format;
@@ -528,19 +529,79 @@ impl Archive {
         self.write(Some(level))
     }
 
+    /// Write the archive into `sink`, which takes the bytes as they are produced.
+    ///
+    /// This is [`Archive::to_bytes`] without the archive in memory: the local headers and the
+    /// members go into the sink one at a time, and only the central directory is kept, which is
+    /// one record per member. A host with a file hands over the file and pays the largest
+    /// member rather than the whole archive; a host which wants the bytes uses
+    /// [`Archive::to_bytes`], whose sink is a `Vec<u8>`.
+    ///
+    /// The archive is the one [`Archive::to_bytes`] writes, byte for byte: the same members in
+    /// the same order, the raw copy of everything which did not change, the same timestamps and
+    /// the same zip64 thresholds.
+    ///
+    /// Nothing is flushed here beyond what the sink does itself, so a caller which wraps a file
+    /// in a buffer flushes that buffer and checks the result: the bytes of the last write may
+    /// still be in it when this returns.
+    ///
+    /// # Errors
+    ///
+    /// Those of [`Archive::to_bytes`], and [`OmexError::Io`] if the sink does not take the
+    /// bytes, which leaves the sink holding as much of the archive as it did take.
+    ///
+    /// # Returns
+    ///
+    /// The number of bytes which went into the sink.
+    pub fn write_into<W: Write>(&mut self, sink: W) -> Result<u64, OmexError> {
+        self.stream(sink, None)
+    }
+
+    /// Write the archive into `sink`, deflating every member at `level`.
+    ///
+    /// This is to [`Archive::write_into`] what [`Archive::to_bytes_recompressed`] is to
+    /// [`Archive::to_bytes`].
+    ///
+    /// # Errors
+    ///
+    /// Those of [`Archive::to_bytes_recompressed`] and [`Archive::write_into`].
+    ///
+    /// # Returns
+    ///
+    /// The number of bytes which went into the sink.
+    pub fn write_into_recompressed<W: Write>(
+        &mut self,
+        sink: W,
+        level: u32,
+    ) -> Result<u64, OmexError> {
+        self.stream(sink, Some(level))
+    }
+
     /// Write the archive, deflating every member at `level` when there is one.
     ///
     /// # Errors
     ///
     /// Those of [`Archive::to_bytes`] and [`Archive::to_bytes_recompressed`].
     fn write(&mut self, level: Option<u32>) -> Result<Vec<u8>, OmexError> {
+        let mut bytes = Vec::new();
+        self.stream(&mut bytes, level)?;
+        Ok(bytes)
+    }
+
+    /// Write the archive into `sink`, deflating every member at `level` when there is one.
+    ///
+    /// # Errors
+    ///
+    /// Those of [`Archive::to_bytes`] and [`Archive::to_bytes_recompressed`], and
+    /// [`OmexError::Io`] if the sink does not take the bytes.
+    fn stream<W: Write>(&mut self, sink: W, level: Option<u32>) -> Result<u64, OmexError> {
         let recompress = level.is_some();
         let level = level.unwrap_or(DEFLATE_LEVEL);
         // the entries and the manifest are taken first, so that the loop can inflate a member
         // which is not copied and cache it, as a caller who asks for one does
         let entries: Vec<Entry> = self.manifest.entries().to_vec();
         let xml = self.manifest.to_xml();
-        let mut writer = Writer::new();
+        let mut writer = Writer::new(sink);
         for entry in &entries {
             let location = entry.location.as_str();
             if location == ARCHIVE_LOCATION {
@@ -563,7 +624,7 @@ impl Archive {
                 }
             }
         }
-        Ok(writer.finish())
+        writer.finish()
     }
 
     /// What the write does with the entry of `location`, which is neither `.` nor the manifest.

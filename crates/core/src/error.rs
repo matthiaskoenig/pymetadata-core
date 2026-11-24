@@ -27,4 +27,12 @@ pub enum OmexError {
     /// matches on this variant instead of on the text.
     #[error("refused: {0}")]
     Password(String),
+
+    /// A sink which could not take the bytes of a write, e.g. a full disk.
+    ///
+    /// Nothing about the archive is wrong when this is raised: the bytes were produced and the
+    /// sink refused them, so a caller with another sink can write the same archive again. A
+    /// write into memory cannot fail this way, so the WebAssembly host never meets it.
+    #[error("io: {0}")]
+    Io(String),
 }

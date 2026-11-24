@@ -141,6 +141,10 @@ impl Archive {
     pub fn reorder_entries(&mut self, order: &[impl AsRef<str>]) -> Result<(), OmexError>;
     pub fn to_bytes(&mut self) -> Result<Vec<u8>, OmexError>;
     pub fn to_bytes_recompressed(&mut self, level: u32) -> Result<Vec<u8>, OmexError>;
+    pub fn write_into<W: Write>(&mut self, sink: W) -> Result<u64, OmexError>;
+    pub fn write_into_recompressed<W: Write>(
+        &mut self, sink: W, level: u32
+    ) -> Result<u64, OmexError>;
 }
 
 // zip::probe, which recognizes a container without opening it
@@ -168,6 +172,17 @@ copied as the compressed member it was read as, with its CRC and its sizes.
 when the archive was built from scratch or must be rewritten at a chosen
 level. Both regenerate `manifest.xml` from the manifest, and both keep the
 entry order of the manifest.
+
+`write_into` is the same write into a sink: the headers and the members go
+into it as they are produced and only the central directory is kept, which is
+one record per member. `to_bytes` is it with a `Vec<u8>` as the sink, so the
+two produce the same bytes and a host picks by where the archive should end
+up; in python, `to_path` writes a file through a buffer. A write of a 268.5 MB
+archive costs 0.0 MB of peak RSS beyond the open archive and 46 ms, where
+`to_bytes` plus a python write of the bytes costs 256.5 MB and 163 ms (#12).
+A sink which does not take the bytes is `OmexError::Io`, which the python
+binding raises as an `OSError`, since a full disk says nothing about the
+archive; the WebAssembly host writes into memory and never meets it.
 
 Invariants the core keeps, all of them the ones `pymetadata` keeps today:
 
@@ -216,6 +231,9 @@ class Archive:
     def remove_entry(self, location: str) -> bool: ...
     def reorder_entries(self, order: Sequence[str]) -> None: ...
     def to_bytes(self, recompress: bool = False, level: int = 9) -> bytes: ...
+    def to_path(
+        self, path: str | os.PathLike[str], recompress: bool = False, level: int = 9
+    ) -> int: ...
 
 
 def has_manifest(path: str | os.PathLike[str]) -> bool: ...
@@ -345,9 +363,12 @@ omex_write(recompress) -> i32   // the archive bytes
 omex_about() -> i32             // JSON: version, backend
 ```
 
-Error codes mirror the sibling. The core produces five, the kind strings of
-`wire::kind`: `malformed`, `refused`, `unsupported`, `not_found` and
-`password`, one per variant of `OmexError`. A `password` names a member whose
+Error codes mirror the sibling. The core produces six, the kind strings of
+`wire::kind`: `malformed`, `refused`, `unsupported`, `not_found`, `password`
+and `io`, one per variant of `OmexError`. An `io` is a sink which did not take
+the bytes of a write, so only a host which writes somewhere can meet it: the
+WebAssembly host writes into memory, and the python binding raises it as an
+`OSError` rather than as an `OmexError`. A `password` names a member whose
 password is wrong or missing; its message carries the `refused` prefix every
 other refusal carries, so the kind, and in python the class of the exception,
 is what tells a member a caller may not read from every other refusal. Two more are host-level and the core never returns

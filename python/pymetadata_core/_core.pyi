@@ -275,6 +275,34 @@ class Archive:
             ArchiveBusyError: if another thread is using this archive.
         """
 
+    def to_path(
+        self,
+        path: str | os.PathLike[str],
+        recompress: bool = False,
+        level: int = 9,
+    ) -> int:
+        """Write the archive to a file, without holding it in memory.
+
+        This is `to_bytes` into a file: the members go into it as they are
+        produced, so what a write needs is the largest member and not the whole
+        archive. The file holds the same bytes `to_bytes` returns for the same
+        content.
+
+        Args:
+            path: the file to write, created or truncated.
+            recompress: deflate every entry again instead of copying the ones
+                which were not replaced.
+            level: the deflate level, 0 to 9, used with `recompress`.
+
+        Returns:
+            The number of bytes written.
+
+        Raises:
+            OSError: if the file cannot be created or written, e.g. a full disk.
+                A write which fails part way leaves what it had written behind.
+            OmexError: as `to_bytes` raises, for the archive itself.
+        """
+
     def to_bytes(self, recompress: bool = False, level: int = 9) -> bytes:
         """Write the archive.
 

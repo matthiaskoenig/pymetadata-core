@@ -2,7 +2,7 @@
 
 use pymetadata_core::OmexError as CoreError;
 use pyo3::PyErr;
-use pyo3::exceptions::{PyRuntimeError, PyValueError};
+use pyo3::exceptions::{PyOSError, PyRuntimeError, PyValueError};
 
 pyo3::create_exception!(
     pymetadata_core,
@@ -74,6 +74,10 @@ pyo3::create_exception!(
 /// The class is the kind of the failure, which is what the core reports in
 /// [`pymetadata_core::wire::kind`] and what a host used to read off the start of the message.
 /// Every class is an `OmexError`, so code which catches that, or `ValueError`, is unaffected.
+///
+/// The one which is no `OmexError` is [`CoreError::Io`], the sink of a write which did not take
+/// the bytes: a full disk and a path which cannot be written are what `OSError` is for, and they
+/// say nothing about the archive. `to_path` is the only call which can raise it.
 pub fn to_py_err(error: CoreError) -> PyErr {
     let message = error.to_string();
     match error {
@@ -82,5 +86,6 @@ pub fn to_py_err(error: CoreError) -> PyErr {
         CoreError::NotFound(_) => NotFoundError::new_err(message),
         CoreError::Password(_) => PasswordError::new_err(message),
         CoreError::Refused(_) => RefusedError::new_err(message),
+        CoreError::Io(_) => PyOSError::new_err(message),
     }
 }

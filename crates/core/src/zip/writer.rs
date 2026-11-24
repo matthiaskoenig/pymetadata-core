@@ -5,8 +5,12 @@
 //! 0.12 ms (`spike/RESULTS.md`). [`Writer::add_raw`] is that copy, and it is why the reader
 //! hands out the raw bytes of a member at all.
 //!
-//! The writer holds the archive it builds in a buffer and never touches the filesystem, as
-//! everything in the core does: a host hands it bytes and takes bytes back.
+//! The writer puts what it produces into a sink and keeps only the central directory, which is
+//! one record per member. A `Vec<u8>` is a sink, so a host which wants the bytes gets them as
+//! it always did; a host with a file hands over the file and the archive is never in memory as
+//! a whole. The core itself still touches no filesystem: it writes into what it is given.
+
+use std::io::Write;
 
 use flate2::{Compress, Compression, FlushCompress, Status};
 
@@ -90,25 +94,50 @@ impl Metadata {
     }
 }
 
-/// A zip archive which is built in memory, one member at a time.
+/// A zip archive which is written into a sink, one member at a time.
 ///
 /// The members are written in the order they are added. Nothing is held back: a member is in
-/// the buffer as soon as it was added, and [`Writer::finish`] appends the central directory and
-/// the end-of-central-directory record to it.
-#[derive(Debug, Default)]
-pub struct Writer {
-    /// The local file headers and the data of the members, which is the archive but its end.
-    body: Vec<u8>,
-    /// The central directory, appended to the body by [`Writer::finish`].
+/// the sink as soon as it was added, and [`Writer::finish`] writes the central directory and
+/// the end-of-central-directory record behind them. What the writer keeps is the central
+/// directory, which it can only write once it knows every member, and the offset it is at,
+/// since the sink cannot be asked where it stands.
+#[derive(Debug)]
+pub struct Writer<W: Write> {
+    /// Where the local file headers and the data of the members go.
+    sink: W,
+    /// The central directory, written to the sink by [`Writer::finish`].
     central: Vec<u8>,
     /// The number of members.
     count: u64,
+    /// How many bytes went into the sink, which is the offset of what comes next.
+    offset: u64,
+    /// The buffer a header is built in before it goes to the sink, reused by every member.
+    header: Vec<u8>,
 }
 
-impl Writer {
-    /// A writer of an empty archive.
-    pub fn new() -> Self {
-        Self::default()
+impl<W: Write> Writer<W> {
+    /// A writer of an empty archive, writing into `sink`.
+    pub fn new(sink: W) -> Self {
+        Self {
+            sink,
+            central: Vec::new(),
+            count: 0,
+            offset: 0,
+            header: Vec::new(),
+        }
+    }
+
+    /// Hand `bytes` to the sink and count them.
+    ///
+    /// # Errors
+    ///
+    /// [`OmexError::Io`] if the sink does not take them.
+    fn put(&mut self, bytes: &[u8]) -> Result<(), OmexError> {
+        self.sink
+            .write_all(bytes)
+            .map_err(|error| OmexError::Io(error.to_string()))?;
+        self.offset += bytes.len() as u64;
+        Ok(())
     }
 
     /// Add `data` as a member named `name`, uncompressed.
@@ -216,50 +245,61 @@ impl Writer {
     /// needs the record its own count promises. The sizes keep the full 4 GB of their
     /// fields, where `zipfile` stops at 2 GB to stay clear of a reader which holds an offset
     /// in a signed 32 bit integer.
-    pub fn finish(mut self) -> Vec<u8> {
-        let cd_offset = self.body.len() as u64;
+    pub fn finish(mut self) -> Result<u64, OmexError> {
+        self.close()
+    }
+
+    /// Write what closes the archive, keeping the writer, so that a sink can be taken back.
+    ///
+    /// # Errors
+    ///
+    /// [`OmexError::Io`] if the sink does not take the bytes.
+    fn close(&mut self) -> Result<u64, OmexError> {
+        let cd_offset = self.offset;
         let cd_size = self.central.len() as u64;
-        self.body.append(&mut self.central);
+        let central = std::mem::take(&mut self.central);
+        self.put(&central)?;
+        // the records which close the archive are a few hundred bytes, built here and handed
+        // over at the end, after which the sink holds the whole archive
+        let mut end = Vec::new();
         let zip64 = self.count >= SENTINEL16_U64
             || cd_size >= SENTINEL32_U64
             || cd_offset >= SENTINEL32_U64;
         if zip64 {
             // the zip64 record, then its locator, then the 32 bit record of sentinels: a reader
             // reads the last one, finds the locator right in front of it and follows it back
-            let record = self.body.len() as u64;
-            self.body.extend_from_slice(&ZIP64_EOCD_SIGNATURE);
+            let record = self.offset + end.len() as u64;
+            end.extend_from_slice(&ZIP64_EOCD_SIGNATURE);
             // the length of the record behind this field, i.e. its 56 bytes but the first 12
-            self.body.extend_from_slice(&44u64.to_le_bytes());
-            self.body
-                .extend_from_slice(&(UNIX | ZIP64_VERSION).to_le_bytes());
-            self.body.extend_from_slice(&ZIP64_VERSION.to_le_bytes());
-            self.body.extend_from_slice(&0u32.to_le_bytes()); // this disk
-            self.body.extend_from_slice(&0u32.to_le_bytes()); // the disk of the directory
-            self.body.extend_from_slice(&self.count.to_le_bytes());
-            self.body.extend_from_slice(&self.count.to_le_bytes());
-            self.body.extend_from_slice(&cd_size.to_le_bytes());
-            self.body.extend_from_slice(&cd_offset.to_le_bytes());
-            self.body.extend_from_slice(&ZIP64_LOCATOR_SIGNATURE);
-            self.body.extend_from_slice(&0u32.to_le_bytes()); // the disk of the record
-            self.body.extend_from_slice(&record.to_le_bytes());
-            self.body.extend_from_slice(&1u32.to_le_bytes()); // the number of disks
+            end.extend_from_slice(&44u64.to_le_bytes());
+            end.extend_from_slice(&(UNIX | ZIP64_VERSION).to_le_bytes());
+            end.extend_from_slice(&ZIP64_VERSION.to_le_bytes());
+            end.extend_from_slice(&0u32.to_le_bytes()); // this disk
+            end.extend_from_slice(&0u32.to_le_bytes()); // the disk of the directory
+            end.extend_from_slice(&self.count.to_le_bytes());
+            end.extend_from_slice(&self.count.to_le_bytes());
+            end.extend_from_slice(&cd_size.to_le_bytes());
+            end.extend_from_slice(&cd_offset.to_le_bytes());
+            end.extend_from_slice(&ZIP64_LOCATOR_SIGNATURE);
+            end.extend_from_slice(&0u32.to_le_bytes()); // the disk of the record
+            end.extend_from_slice(&record.to_le_bytes());
+            end.extend_from_slice(&1u32.to_le_bytes()); // the number of disks
         }
         // a field of the 32 bit record which fits carries its value although the zip64 record
         // holds it too, which is how python's `zipfile` writes it; the three are independent
         // here, where the zip64 record holds all of them, and not in a file header, where the
         // extra field holds the two sizes together or neither of them
         let count = narrow16(self.count, self.count >= SENTINEL16_U64);
-        self.body.extend_from_slice(&EOCD_SIGNATURE);
-        self.body.extend_from_slice(&0u16.to_le_bytes()); // this disk
-        self.body.extend_from_slice(&0u16.to_le_bytes()); // the disk of the directory
-        self.body.extend_from_slice(&count.to_le_bytes());
-        self.body.extend_from_slice(&count.to_le_bytes());
-        self.body
-            .extend_from_slice(&narrow32(cd_size, cd_size >= SENTINEL32_U64).to_le_bytes());
-        self.body
-            .extend_from_slice(&narrow32(cd_offset, cd_offset >= SENTINEL32_U64).to_le_bytes());
-        self.body.extend_from_slice(&0u16.to_le_bytes()); // no archive comment
-        self.body
+        end.extend_from_slice(&EOCD_SIGNATURE);
+        end.extend_from_slice(&0u16.to_le_bytes()); // this disk
+        end.extend_from_slice(&0u16.to_le_bytes()); // the disk of the directory
+        end.extend_from_slice(&count.to_le_bytes());
+        end.extend_from_slice(&count.to_le_bytes());
+        end.extend_from_slice(&narrow32(cd_size, cd_size >= SENTINEL32_U64).to_le_bytes());
+        end.extend_from_slice(&narrow32(cd_offset, cd_offset >= SENTINEL32_U64).to_le_bytes());
+        end.extend_from_slice(&0u16.to_le_bytes()); // no archive comment
+        self.put(&end)?;
+        Ok(self.offset)
     }
 
     /// Write the local file header and the data of a member, and its central directory header.
@@ -287,14 +327,37 @@ impl Writer {
             crc32,
             compressed_size: data.len() as u64,
             uncompressed_size,
-            offset: self.body.len() as u64,
+            offset: self.offset,
             metadata,
         };
-        record.write_local(&mut self.body);
-        self.body.extend_from_slice(data);
+        // the header is built in the buffer the writer keeps for it and handed over in one
+        // piece, so a sink which writes through to a file sees one write per header
+        let mut header = std::mem::take(&mut self.header);
+        header.clear();
+        record.write_local(&mut header);
+        let written = self.put(&header);
+        self.header = header;
+        written?;
+        self.put(data)?;
         record.write_central(&mut self.central);
         self.count += 1;
         Ok(())
+    }
+}
+
+impl Writer<Vec<u8>> {
+    /// Finish the archive and take its bytes, for a writer which builds one in memory.
+    ///
+    /// This is the shape [`super::super::Archive::to_bytes`] needs and the one a test reads
+    /// back; a writer with a file behind it uses [`Writer::finish`] and the file.
+    ///
+    /// # Errors
+    ///
+    /// None in practice: a `Vec` takes every byte it is handed. The signature carries the
+    /// error of the sink because every sink can fail.
+    pub fn into_bytes(mut self) -> Result<Vec<u8>, OmexError> {
+        self.close()?;
+        Ok(self.sink)
     }
 }
 
@@ -546,10 +609,10 @@ mod tests {
     /// what a reader of such an archive does with the header too: the sizes and the offset of a
     /// member are the ones of the central directory, and nothing else is read for them.
     fn central_only(record: &Record) -> Vec<u8> {
-        let mut writer = Writer::new();
+        let mut writer = Writer::new(Vec::new());
         record.write_central(&mut writer.central);
         writer.count = 1;
-        writer.finish()
+        writer.into_bytes().unwrap()
     }
 
     /// A record of a member of `compressed` bytes which holds `uncompressed`, at `offset`.
@@ -572,7 +635,7 @@ mod tests {
     /// An archive of no members is the end-of-central-directory record and nothing else.
     #[test]
     fn writes_an_empty_archive() {
-        let bytes = Writer::new().finish();
+        let bytes = Writer::new(Vec::new()).into_bytes().unwrap();
         assert_eq!(bytes.len(), 22);
         assert!(members(&bytes).is_empty());
     }
@@ -599,11 +662,11 @@ mod tests {
             dos_date: metadata.date,
             external_attributes: metadata.attributes,
         };
-        let mut writer = Writer::new();
+        let mut writer = Writer::new(Vec::new());
         writer.add_raw("copied.bin", &member, b"x").unwrap();
         writer.add_stored("stored.bin", b"x").unwrap();
         writer.add_deflated("deflated.bin", b"x", 6).unwrap();
-        let bytes = writer.finish();
+        let bytes = writer.into_bytes().unwrap();
         // the local header carries the time at offset 10 and the date at offset 12
         assert_eq!(bytes[10..14], [0x5c, 0x64, 0x21, 0x5c]);
         let written = members(&bytes);
@@ -726,9 +789,9 @@ mod tests {
     /// A name which is not ASCII is written as UTF-8 under bit 11, and read back as it was.
     #[test]
     fn writes_a_name_which_is_not_ascii() {
-        let mut writer = Writer::new();
+        let mut writer = Writer::new(Vec::new());
         writer.add_stored("Hühnerstall/±.xml", b"x").unwrap();
-        let member = members(&writer.finish()).pop().unwrap();
+        let member = members(&writer.into_bytes().unwrap()).pop().unwrap();
         assert_eq!(member.name, "Hühnerstall/±.xml");
         assert_eq!(member.flags, UTF8_NAME);
     }
@@ -738,9 +801,9 @@ mod tests {
     fn deflates_what_inflates_again() {
         let data = b"a member of a COMBINE archive, deflated and inflated again. ".repeat(400);
         for level in 0..=MAX_LEVEL {
-            let mut writer = Writer::new();
+            let mut writer = Writer::new(Vec::new());
             writer.add_deflated("m.bin", &data, level).unwrap();
-            let reader = Reader::new(writer.finish()).unwrap();
+            let reader = Reader::new(writer.into_bytes().unwrap()).unwrap();
             let member = reader.members().first().unwrap();
             assert_eq!(member.method, DEFLATE, "level {level}");
             assert_eq!(reader.inflate(member).unwrap(), data, "level {level}");
