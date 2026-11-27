@@ -146,7 +146,7 @@ impl Manifest {
 
     /// The entries of a `manifest.xml` as the document declares them, one per `content`
     /// element in document order, with the errors of [`Manifest::parse`].
-    pub(crate) fn parse_declared(xml: &str) -> Result<Vec<Entry>, OmexError> {
+    pub fn parse_declared(xml: &str) -> Result<Vec<Entry>, OmexError> {
         let document = roxmltree::Document::parse(xml)
             .map_err(|e| OmexError::Malformed(format!("manifest is not valid XML: {e}")))?;
         let root = document.root_element();
